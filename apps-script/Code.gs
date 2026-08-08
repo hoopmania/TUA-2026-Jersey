@@ -10,8 +10,9 @@ var HEADERS = [
   'Timestamp', 'OrderID',
   'ชื่อผู้สั่งซื้อ', 'เบอร์โทร', 'LINE ID',
   'สำหรับ', 'รุ่นนักกีฬาที่ลงแข่ง',
-  'แบบชุดหลัก', 'ไซส์เสื้อ', 'ไซส์กางเกง', 'ชื่อสกรีนหลังเสื้อ', 'เบอร์เสื้อ',
-  'สั่งเสื้อเพิ่ม', 'แบบเสื้อเพิ่ม', 'ไซส์เสื้อเพิ่ม', 'ชื่อสกรีนเสื้อเพิ่ม', 'เบอร์เสื้อเพิ่ม',
+  'สั่งเสื้อกล้าม', 'ไซส์เสื้อกล้าม', 'ชื่อสกรีนเสื้อกล้าม', 'เบอร์เสื้อกล้าม',
+  'สั่งเสื้อแขนสั้น', 'ไซส์เสื้อแขนสั้น', 'ชื่อสกรีนเสื้อแขนสั้น', 'เบอร์เสื้อแขนสั้น',
+  'สั่งกางเกง', 'ไซส์กางเกง', 'ไม่รับกางเกง (ยืนยันแล้ว)',
   'หมายเหตุ',
   'วิธีจัดส่ง', 'ผู้รับ(จัดส่ง)', 'ที่อยู่จัดส่ง', 'เบอร์โทร(จัดส่ง)',
   'ยอดรวมออเดอร์ (บาท)', 'ลิงก์สลิปการโอนเงิน'
@@ -34,17 +35,6 @@ function getSlipFolder_() {
   var folders = DriveApp.getFoldersByName(DRIVE_FOLDER_NAME);
   if (folders.hasNext()) return folders.next();
   return DriveApp.createFolder(DRIVE_FOLDER_NAME);
-}
-
-function styleLabel_(s) {
-  if (s === 'sleeveless') return 'เสื้อกล้าม';
-  if (s === 'sleeved') return 'เสื้อแขนสั้น';
-  return '';
-}
-function otherStyle_(s) {
-  if (s === 'sleeveless') return 'sleeved';
-  if (s === 'sleeved') return 'sleeveless';
-  return null;
 }
 
 function doPost(e) {
@@ -77,13 +67,16 @@ function doPost(e) {
     var shipLabel = data.shipMethod === 'pickup' ? 'รับเองที่โรงยิมท่าพระจันทร์' : 'จัดส่งที่บ้าน';
 
     data.entries.forEach(function (en) {
-      var addonStyle = en.addon ? otherStyle_(en.style) : '';
+      var tank = en.tank || {};
+      var short = en.short || {};
+      var shorts = en.shorts || {};
       sheet.appendRow([
         now, orderId,
         data.name, data.phone, data.line || '',
         en.label || '', en.category || '',
-        styleLabel_(en.style), en.shirtSize || '', en.shortsSize || '', en.printName || '', en.printNum || '',
-        en.addon ? 'ใช่' : 'ไม่', styleLabel_(addonStyle), en.addonSize || '', en.addonPrintName || '', en.addonPrintNum || '',
+        tank.checked ? 'ใช่' : 'ไม่', tank.size || '', tank.printName || '', tank.printNum || '',
+        short.checked ? 'ใช่' : 'ไม่', short.size || '', short.printName || '', short.printNum || '',
+        shorts.checked ? 'ใช่' : 'ไม่', shorts.size || '', (!shorts.checked && en.shortsSkip) ? 'ใช่' : '',
         en.note || '',
         shipLabel, data.sName || '', data.sAddr || '', data.sPhone || '',
         data.total || 0, slipUrl
