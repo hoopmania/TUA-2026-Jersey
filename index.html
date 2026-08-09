@@ -279,7 +279,7 @@
       </label>
       <label class="ship-choice" data-m="delivery">
         <input type="radio" name="ship">
-        <span><span class="t">จัดส่งที่บ้าน</span><br><span class="p">ออเดอร์นี้ <span id="ship-fee-preview" style="color:var(--maroon); font-weight:700;"></span> <span class="badge-tmp">(เกณฑ์ยังไม่ fix)</span></span></span>
+        <span><span class="t">จัดส่งที่บ้าน</span><br><span class="p">ออเดอร์นี้ <span id="ship-fee-preview" style="color:var(--maroon); font-weight:700;"></span></span></span>
       </label>
       <p class="hint" id="ship-tier-table" style="margin-top:-6px;"></p>
 
@@ -387,11 +387,14 @@
 
   /* วาง URL ของ Apps Script Web App ที่ deploy แล้วตรงนี้ (ดูขั้นตอนใน README.md) */
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxwVUZUUNgz3xuwcdCQiCekAdiERjYh55q3bBAoukHKwnIsO4-FfPmtzanRi6uNM-8G/exec';
-  /* ค่าส่งกำลังสรุป (ยังไม่ fix) — จัดตามช่วงจำนวน "ชิ้น" รวมทั้งออเดอร์ ปรับตัวเลข/ช่วงตรงนี้ได้เลยเมื่อสรุปราคาจริงแล้ว */
+  /* ค่าส่งจัดตามช่วงจำนวน "ชิ้น" รวมทั้งออเดอร์ */
   var SHIP_TIERS = [
-    {upTo:2, fee:50},
-    {upTo:4, fee:70},
-    {upTo:Infinity, fee:100}
+    {upTo:1, fee:40},
+    {upTo:2, fee:60},
+    {upTo:4, fee:80},
+    {upTo:6, fee:100},
+    {upTo:8, fee:130},
+    {upTo:Infinity, fee:160}
   ];
   function shipFeeFor(pieceCount){
     for(var t=0; t<SHIP_TIERS.length; t++){ if(pieceCount <= SHIP_TIERS[t].upTo) return SHIP_TIERS[t].fee; }
@@ -641,9 +644,12 @@
     var pieces = totalPieces();
     var fee = shipFeeFor(pieces);
     $('#ship-fee-preview').textContent = pieces+' ชิ้น = '+fee+' ฿';
-    $('#ship-tier-table').innerHTML = 'เกณฑ์ปัจจุบัน: ' + SHIP_TIERS.map(function(t, idx){
+    $('#ship-tier-table').innerHTML = 'เกณฑ์ค่าส่ง: ' + SHIP_TIERS.map(function(t, idx){
       var prevMax = idx===0 ? 1 : SHIP_TIERS[idx-1].upTo+1;
-      var range = t.upTo===Infinity ? (prevMax+'+ ชิ้น') : (idx===0 ? ('1–'+t.upTo+' ชิ้น') : (prevMax+'–'+t.upTo+' ชิ้น'));
+      var range;
+      if(t.upTo===Infinity){ range = prevMax+'+ ชิ้น'; }
+      else if(prevMax===t.upTo){ range = t.upTo+' ชิ้น'; }
+      else { range = prevMax+'–'+t.upTo+' ชิ้น'; }
       return range+' = '+t.fee+' ฿';
     }).join(' • ');
   }
