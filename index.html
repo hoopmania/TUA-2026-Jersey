@@ -428,8 +428,8 @@
   function makeEntry(){
     return {
       label:'', category:'',
-      tank:   {checked:false, size:'', printName:'', printNum:''},
-      short:  {checked:false, size:'', printName:'', printNum:''},
+      tank:   {checked:false, size:'', printName:'', printNum:'', printSkip:false},
+      short:  {checked:false, size:'', printName:'', printNum:'', printSkip:false},
       shorts: {checked:false, size:''},
       shortsSkip:false,
       note:''
@@ -506,8 +506,12 @@
   function entryNeedsShortsWarning(e){
     return (e.tank.checked || e.short.checked) && !e.shorts.checked && !e.shortsSkip;
   }
+  function garmentNeedsPrintWarning(g, gEntry){
+    return g.print && gEntry.checked && (!gEntry.printName.trim() || gEntry.printNum==='') && !gEntry.printSkip;
+  }
 
   function garmentRowHtml(i, g, gEntry){
+    var printWarn = garmentNeedsPrintWarning(g, gEntry);
     return ''+
     '<div class="addon-box">'+
       '<label class="addon-toggle">'+
@@ -520,9 +524,18 @@
           '<p class="size-readout" id="ro-'+g.key+'-'+i+'">'+measureText(g.key, gEntry.size)+'</p></div>'+
         (g.print ? (
           '<div class="row2">'+
-            '<div class="field"><label class="req">ชื่อสกรีนหลังเสื้อ</label><input type="text" data-f="printName" data-g="'+g.key+'" data-i="'+i+'" maxlength="15" style="text-transform:uppercase" value="'+esc(gEntry.printName)+'" placeholder="SOMCHAI"></div>'+
-            '<div class="field"><label class="req">เบอร์เสื้อ</label><input type="number" data-f="printNum" data-g="'+g.key+'" data-i="'+i+'" min="0" max="99" value="'+esc(gEntry.printNum)+'" placeholder="6"></div>'+
-          '</div>'
+            '<div class="field"><label>ชื่อสกรีนหลังเสื้อ <span class="opt">(ไม่บังคับ)</span></label><input type="text" data-f="printName" data-g="'+g.key+'" data-i="'+i+'" maxlength="15" style="text-transform:uppercase" value="'+esc(gEntry.printName)+'" placeholder="SOMCHAI"></div>'+
+            '<div class="field"><label>เบอร์เสื้อ <span class="opt">(ไม่บังคับ)</span></label><input type="number" data-f="printNum" data-g="'+g.key+'" data-i="'+i+'" min="0" max="99" value="'+esc(gEntry.printNum)+'" placeholder="6"></div>'+
+          '</div>'+
+          (printWarn ? (
+            '<div class="warn-box" style="margin-top:0;">'+
+              '<span style="font-size:1.15rem;">⚠️</span>'+
+              '<span><span class="t">ยังไม่ได้ระบุชื่อสกรีนหลังเสื้อ หรือ เบอร์เสื้อ</span>'+
+              '<div class="p">ถ้าไม่ต้องการสกรีนชื่อ/เบอร์บน'+g.label+' กดยืนยันได้เลย</div>'+
+              '<div class="btn-row"><button type="button" class="btn btn-ghost" data-act="skipprint" data-g="'+g.key+'" data-i="'+i+'">ไม่ระบุ ยืนยัน</button></div>'+
+              '</span>'+
+            '</div>'
+          ) : '')
         ) : '')+
       '</div>') : '')+
     '</div>';
@@ -598,6 +611,7 @@
     }
     if(act==='addshorts'){ state.entries[i].shorts.checked = true; state.entries[i].shortsSkip = false; renderEntries(); updateCart(); return; }
     if(act==='skipshorts'){ state.entries[i].shortsSkip = true; renderEntries(); return; }
+    if(act==='skipprint'){ state.entries[i][t.dataset.g].printSkip = true; renderEntries(); return; }
   });
 
   $('#add-entry').addEventListener('click', function(){
@@ -746,8 +760,8 @@
       if(!e.category) return false;
       var anyChecked = e.tank.checked || e.short.checked || e.shorts.checked;
       if(!anyChecked) return false;
-      if(e.tank.checked && (!e.tank.size || !e.tank.printName.trim() || e.tank.printNum==='')) return false;
-      if(e.short.checked && (!e.short.size || !e.short.printName.trim() || e.short.printNum==='')) return false;
+      if(e.tank.checked && (!e.tank.size || garmentNeedsPrintWarning(GARMENTS[0], e.tank))) return false;
+      if(e.short.checked && (!e.short.size || garmentNeedsPrintWarning(GARMENTS[1], e.short))) return false;
       if(e.shorts.checked && !e.shorts.size) return false;
       if(entryNeedsShortsWarning(e)) return false;
       return true;
@@ -783,7 +797,13 @@
         var gEntry = e[g.key];
         if(!gEntry.checked) return;
         var v = 'ไซส์ '+gEntry.size;
-        if(g.print){ v += ' • "'+gEntry.printName+'" #'+gEntry.printNum; }
+        if(g.print){
+          if(gEntry.printName.trim() || gEntry.printNum!==''){
+            v += ' • '+(gEntry.printName.trim() ? '"'+gEntry.printName+'"' : 'ไม่ระบุชื่อ')+' #'+(gEntry.printNum!=='' ? gEntry.printNum : '-');
+          } else {
+            v += ' • ไม่ระบุชื่อ/เบอร์สกรีน';
+          }
+        }
         body += '<div class="kv"><span class="k">'+g.label+'</span><span>'+v+'</span></div>';
       });
       if(!e.shorts.checked && e.shortsSkip){ body += '<div class="kv"><span class="k">กางเกง</span><span>ไม่รับ (ยืนยันแล้ว)</span></div>'; }
