@@ -193,7 +193,7 @@
   table.sz th:first-child, table.sz td:first-child{background:var(--paper); font-weight:700;}
   .close-x{background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--muted); line-height:1;}
 
-  .toast{position:fixed; top:14px; left:50%; transform:translateX(-50%); background:var(--success); color:#fff; padding:9px 16px; border-radius:99px; font-size:.84rem; font-weight:600; z-index:40; opacity:0; pointer-events:none; transition:opacity .25s ease, transform .25s ease;}
+  .toast{position:fixed; top:14px; left:50%; transform:translateX(-50%); max-width:calc(100vw - 32px); width:max-content; background:var(--success); color:#fff; padding:9px 16px; border-radius:16px; font-size:.84rem; font-weight:600; z-index:40; opacity:0; pointer-events:none; transition:opacity .25s ease, transform .25s ease; text-align:center; line-height:1.4;}
   .toast.show{opacity:1; transform:translateX(-50%) translateY(4px);}
 
   .success-panel{text-align:center; padding:10px 4px 4px;}
@@ -752,21 +752,27 @@
   function showErr(id, show){ var e=$('#'+id); if(e) e.style.display = show?'block':'none'; }
 
   $('#next-1').addEventListener('click', function(){
-    if(!state.name.trim() || !state.phone.trim()){ toast('กรุณากรอกชื่อและเบอร์โทรศัพท์'); return; }
+    if(!state.name.trim() || !state.phone.trim()){ toast('กรุณากรอกชื่อและเบอร์โทรศัพท์', 'error'); return; }
     setStep(2);
   });
   $('#next-2').addEventListener('click', function(){
-    var ok = state.entries.length>0 && state.entries.every(function(e){
-      if(!e.category) return false;
+    var problems = [];
+    state.entries.forEach(function(e, i){
+      var who = e.label ? e.label : ('ชุดที่ '+(i+1));
+      if(!e.category){ problems.push(who+': ยังไม่ได้เลือกรุ่นนักกีฬาที่ลงแข่ง'); }
       var anyChecked = e.tank.checked || e.short.checked || e.shorts.checked;
-      if(!anyChecked) return false;
-      if(e.tank.checked && (!e.tank.size || garmentNeedsPrintWarning(GARMENTS[0], e.tank))) return false;
-      if(e.short.checked && (!e.short.size || garmentNeedsPrintWarning(GARMENTS[1], e.short))) return false;
-      if(e.shorts.checked && !e.shorts.size) return false;
-      if(entryNeedsShortsWarning(e)) return false;
-      return true;
+      if(!anyChecked){ problems.push(who+': ยังไม่ได้ติ๊กรายการที่จะสั่งเลย'); return; }
+      if(e.tank.checked && !e.tank.size){ problems.push(who+': ยังไม่ได้เลือกไซส์เสื้อกล้าม'); }
+      if(e.tank.checked && garmentNeedsPrintWarning(GARMENTS[0], e.tank)){ problems.push(who+': ยังไม่ได้กดยืนยันเรื่องชื่อ/เบอร์เสื้อกล้าม'); }
+      if(e.short.checked && !e.short.size){ problems.push(who+': ยังไม่ได้เลือกไซส์เสื้อแขนสั้น'); }
+      if(e.short.checked && garmentNeedsPrintWarning(GARMENTS[1], e.short)){ problems.push(who+': ยังไม่ได้กดยืนยันเรื่องชื่อ/เบอร์เสื้อแขนสั้น'); }
+      if(e.shorts.checked && !e.shorts.size){ problems.push(who+': ยังไม่ได้เลือกไซส์กางเกง'); }
+      if(entryNeedsShortsWarning(e)){ problems.push(who+': ยังไม่ได้กดยืนยันเรื่องกางเกง'); }
     });
-    if(!ok){ toast('กรอกรายละเอียดแต่ละชุดให้ครบ และตอบคำถามเรื่องกางเกงก่อนไปต่อ'); return; }
+    if(problems.length){
+      toast(problems[0] + (problems.length>1 ? ' (และอีก '+(problems.length-1)+' จุด)' : ''), 'error');
+      return;
+    }
     setStep(3);
   });
   $('#next-3').addEventListener('click', function(){
@@ -861,7 +867,7 @@
 
   $('#confirm-order').addEventListener('click', function(){
     if(APPS_SCRIPT_URL.indexOf('PASTE_YOUR_WEB_APP_URL_HERE') !== -1){
-      toast('ยังไม่ได้ตั้งค่า APPS_SCRIPT_URL — ดูขั้นตอนใน README.md');
+      toast('ยังไม่ได้ตั้งค่า APPS_SCRIPT_URL — ดูขั้นตอนใน README.md', 'error');
       return;
     }
     var btn = $('#confirm-order');
@@ -889,15 +895,17 @@
     }).catch(function(err){
       btn.disabled = false;
       btn.textContent = 'ยืนยันคำสั่งซื้อ';
-      toast('ส่งคำสั่งซื้อไม่สำเร็จ: '+err.message+' — ลองใหม่อีกครั้ง');
+      toast('ส่งคำสั่งซื้อไม่สำเร็จ: '+err.message+' — ลองใหม่อีกครั้ง', 'error');
     });
   });
 
-  function toast(msg){
+  function toast(msg, type){
     var t = $('#toast');
-    t.textContent = msg; t.classList.add('show');
+    t.textContent = msg;
+    t.style.background = type==='error' ? 'var(--danger)' : 'var(--success)';
+    t.classList.add('show');
     clearTimeout(toast._h);
-    toast._h = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+    toast._h = setTimeout(function(){ t.classList.remove('show'); }, type==='error' ? 3400 : 2200);
   }
 
   renderEntries();
