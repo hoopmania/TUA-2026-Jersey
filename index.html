@@ -4,11 +4,12 @@
     --maroon:#8A1F2B;
     --maroon-deep:#5E121B;
     --gold:#B8892F;
-    --paper:#F2ECDD;
-    --card:#FBF8F1;
+    --paper:#E9DFC5;
+    --card:#F1E9D6;
+    --input-bg:#FFFFFF;
     --ink:#241512;
     --muted:#7A6A5E;
-    --line:rgba(36,21,18,0.14);
+    --line:rgba(36,21,18,0.18);
     --success:#2F7D4F;
     --danger:#B8471F;
     --focus:#2F6FB8;
@@ -17,19 +18,19 @@
   @media (prefers-color-scheme: dark){
     :root{
       --maroon:#E2596B; --maroon-deep:#F0A0AC; --gold:#E4B856;
-      --paper:#1B1512; --card:#241C17; --ink:#F1E9DC; --muted:#B8A996;
+      --paper:#1B1512; --card:#241C17; --input-bg:#4A3B2C; --ink:#F1E9DC; --muted:#B8A996;
       --line:rgba(241,233,220,0.16); --success:#5FBE86; --danger:#E2725A; --focus:#7CB3F0;
     }
   }
   :root[data-theme="dark"]{
     --maroon:#E2596B; --maroon-deep:#F0A0AC; --gold:#E4B856;
-    --paper:#1B1512; --card:#241C17; --ink:#F1E9DC; --muted:#B8A996;
+    --paper:#1B1512; --card:#241C17; --input-bg:#4A3B2C; --ink:#F1E9DC; --muted:#B8A996;
     --line:rgba(241,233,220,0.16); --success:#5FBE86; --danger:#E2725A; --focus:#7CB3F0;
   }
   :root[data-theme="light"]{
     --maroon:#8A1F2B; --maroon-deep:#5E121B; --gold:#B8892F;
-    --paper:#F2ECDD; --card:#FBF8F1; --ink:#241512; --muted:#7A6A5E;
-    --line:rgba(36,21,18,0.14); --success:#2F7D4F; --danger:#B8471F; --focus:#2F6FB8;
+    --paper:#E9DFC5; --card:#F1E9D6; --input-bg:#FFFFFF; --ink:#241512; --muted:#7A6A5E;
+    --line:rgba(36,21,18,0.18); --success:#2F7D4F; --danger:#B8471F; --focus:#2F6FB8;
   }
 
   *{box-sizing:border-box;}
@@ -97,7 +98,7 @@
   .field label{display:block; font-size:.88rem; font-weight:600; margin-bottom:6px;}
   .field .opt{font-weight:400; color:var(--muted); font-size:.82rem;}
   input[type="text"], input[type="tel"], input[type="number"], select, textarea{
-    width:100%; padding:11px 12px; font-size:1rem; font-family:inherit; background:var(--paper); color:var(--ink);
+    width:100%; padding:11px 12px; font-size:1rem; font-family:inherit; background:var(--input-bg); color:var(--ink);
     border:1.5px solid var(--line); border-radius:9px;
   }
   textarea{resize:vertical; min-height:64px;}
