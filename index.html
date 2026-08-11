@@ -542,7 +542,7 @@
         '</div>'+
         (g.print ? (
           '<div class="row2">'+
-            '<div class="field"><label>ชื่อสกรีนหลังเสื้อ <span class="opt">(ไม่บังคับ)</span></label><input type="text" data-f="printName" data-g="'+g.key+'" data-i="'+i+'" maxlength="15" style="text-transform:uppercase" value="'+esc(gEntry.printName)+'" placeholder="SOMCHAI"></div>'+
+            '<div class="field"><label>ชื่อสกรีนหลังเสื้อ <span class="opt">(ไม่บังคับ)</span></label><input type="text" data-f="printName" data-g="'+g.key+'" data-i="'+i+'" maxlength="15" value="'+esc(gEntry.printName)+'" placeholder="Somchai"></div>'+
             '<div class="field"><label>เบอร์เสื้อ <span class="opt">(ไม่บังคับ)</span></label><input type="number" data-f="printNum" data-g="'+g.key+'" data-i="'+i+'" min="0" max="99" value="'+esc(gEntry.printNum)+'" placeholder="6"></div>'+
           '</div>'+
           (printWarn ? (
@@ -607,7 +607,6 @@
     var t = ev.target, i = t.dataset.i, g = t.dataset.g, f = t.dataset.f;
     if(f==null || i==null) return;
     var val = t.value;
-    if(f==='printName'){ val = val.toUpperCase(); t.value = val; }
     if(g){ state.entries[+i][g][f] = val; } else { state.entries[+i][f] = val; }
   });
   entriesEl.addEventListener('change', function(ev){
