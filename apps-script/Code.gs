@@ -15,10 +15,12 @@ var HEADERS = [
   'สั่งกางเกง', 'ไซส์กางเกง', 'ไม่รับกางเกง (ยืนยันแล้ว)',
   'หมายเหตุ',
   'วิธีจัดส่ง', 'ผู้รับ(จัดส่ง)', 'ที่อยู่จัดส่ง', 'เบอร์โทร(จัดส่ง)',
-  'ค่าจัดส่ง (บาท)', 'ยอดรวมออเดอร์ (บาท)', 'ลิงก์สลิปการโอนเงิน'
+  'ค่าจัดส่ง (บาท)', 'ยอดรวมออเดอร์ (บาท)', 'ยอดแจ้งการโอน (บาท)', 'ลิงก์สลิปการโอนเงิน'
 ];
 // 'ค่าจัดส่ง' และยอดรวมของบรรทัดแรกในแต่ละ OrderID เท่านั้นที่รวมค่าส่ง —
 // บรรทัดอื่นของ OrderID เดียวกันจะโชว์แค่ยอดของรายการนั้นเอง กัน sum ทั้งคอลัมน์ผิดจากยอดซ้ำ
+// 'ยอดแจ้งการโอน' = ยอดรวมทั้งออเดอร์ (ทุกคนในออเดอร์นี้ + ค่าส่ง) ใส่ไว้แถวแรกของ OrderID
+// เท่านั้น แถวอื่นเป็น 0 — ไว้เทียบกับสลิปตรง ๆ โดยไม่ต้องบวกเลขเอง
 
 // ราคา/เกณฑ์ค่าส่งปัจจุบัน — ใช้ทั้งตอนคำนวณยอดใหม่ (backfillOrderTotals) และต้องตรงกับค่าใน index.html
 var PRICE_PIECE = 350;
@@ -101,6 +103,7 @@ function doPost(e) {
       var isFirstRow = idx === 0;
       var rowShipFee = isFirstRow ? shipFee : '';
       var rowTotal = (en.entryTotal || 0) + (isFirstRow ? shipFee : 0);
+      var transferAmount = isFirstRow ? (data.total || 0) : 0;
       sheet.appendRow([
         now, orderId,
         data.name, data.phone, data.line || '',
@@ -110,7 +113,7 @@ function doPost(e) {
         shorts.checked ? 'ใช่' : 'ไม่', shorts.size || '', (!shorts.checked && en.shortsSkip) ? 'ใช่' : '',
         en.note || '',
         shipLabel, data.sName || '', data.sAddr || '', data.sPhone || '',
-        rowShipFee, rowTotal, slipUrl
+        rowShipFee, rowTotal, transferAmount, slipUrl
       ]);
     });
 
@@ -151,9 +154,9 @@ function shipFeeForPieces_(pieceCount) {
 }
 
 // รันครั้งเดียวจาก Apps Script editor (เลือกฟังก์ชัน backfillOrderTotals แล้วกด Run) เพื่อคำนวณ
-// "ค่าจัดส่ง (บาท)" กับ "ยอดรวมออเดอร์ (บาท)" ของแถวที่บันทึกไว้ก่อนหน้านี้ใหม่ทั้งหมด ให้ตรงกับ
-// รูปแบบใหม่ (ยอดต่อแถว + ค่าส่งอยู่แถวแรกของแต่ละ OrderID เท่านั้น) โดยคำนวณจากคอลัมน์
-// สั่ง.../ไซส์... ที่มีอยู่แล้วในแต่ละแถว ไม่ได้อ่านค่ายอดรวมเดิมเลย
+// "ค่าจัดส่ง (บาท)", "ยอดรวมออเดอร์ (บาท)" และ "ยอดแจ้งการโอน (บาท)" ของแถวที่บันทึกไว้ก่อนหน้านี้
+// ใหม่ทั้งหมด ให้ตรงกับรูปแบบใหม่ (ยอดต่อแถว + ค่าส่ง/ยอดแจ้งโอนอยู่แถวแรกของแต่ละ OrderID เท่านั้น)
+// โดยคำนวณจากคอลัมน์ สั่ง.../ไซส์... ที่มีอยู่แล้วในแต่ละแถว ไม่ได้อ่านค่ายอดรวมเดิมเลย
 //
 // ข้อควรรู้: ใช้ราคา/เกณฑ์ค่าส่งชุดปัจจุบัน (PRICE_PIECE, PRICE_SPECIAL_SURCHARGE, SHIP_TIERS_GS
 // ด้านบนไฟล์นี้) กับทุกแถว — ถ้าราคาหรือเกณฑ์ค่าส่งเคยเปลี่ยนระหว่างทาง ออเดอร์ที่สั่งตอนราคาเก่า
@@ -182,13 +185,15 @@ function backfillOrderTotals() {
   var C_SHIP_METHOD = colIdx('วิธีจัดส่ง');
   var C_SHIPFEE = colIdx('ค่าจัดส่ง (บาท)');
   var C_TOTAL = colIdx('ยอดรวมออเดอร์ (บาท)');
+  var C_TRANSFER = colIdx('ยอดแจ้งการโอน (บาท)');
 
   var range = sheet.getRange(2, 1, lastRow - 1, lastCol);
   var values = range.getValues();
 
-  // pass 1: ต้นทุนของแต่ละแถว + รวมจำนวนชิ้นทั้งหมดต่อ OrderID (ไว้คำนวณค่าส่ง)
+  // pass 1: ต้นทุนของแต่ละแถว + รวมจำนวนชิ้น/ยอดสินค้าทั้งหมดต่อ OrderID (ไว้คำนวณค่าส่งกับยอดแจ้งโอน)
   var rowCost = [];
   var orderPieces = {};
+  var orderItemSum = {};
   var orderIsDelivery = {};
   var skipped = 0;
   values.forEach(function (row) {
@@ -206,10 +211,11 @@ function backfillOrderTotals() {
 
     var pieces = (tankOn ? 1 : 0) + (shortOn ? 1 : 0) + (shortsOn ? 1 : 0);
     orderPieces[oid] = (orderPieces[oid] || 0) + pieces;
+    orderItemSum[oid] = (orderItemSum[oid] || 0) + cost;
     if (row[C_SHIP_METHOD] === 'จัดส่งที่บ้าน') orderIsDelivery[oid] = true;
   });
 
-  // pass 2: เขียนค่าจัดส่ง (เฉพาะแถวแรกที่เจอ OrderID นั้น) + ยอดรวมออเดอร์ของแต่ละแถว
+  // pass 2: เขียนค่าจัดส่ง + ยอดรวมออเดอร์ของแต่ละแถว + ยอดแจ้งการโอน (รวมทั้งออเดอร์ เฉพาะแถวแรก)
   var seenOrder = {};
   var orderCount = 0;
   values.forEach(function (row, i) {
@@ -222,6 +228,7 @@ function backfillOrderTotals() {
     var shipFee = (isFirst && orderIsDelivery[oid]) ? shipFeeForPieces_(orderPieces[oid]) : 0;
     values[i][C_SHIPFEE] = isFirst ? shipFee : '';
     values[i][C_TOTAL] = rowCost[i] + (isFirst ? shipFee : 0);
+    values[i][C_TRANSFER] = isFirst ? (orderItemSum[oid] + shipFee) : 0;
   });
 
   range.setValues(values);
