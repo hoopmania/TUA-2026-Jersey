@@ -121,6 +121,8 @@
   .legend-item .ttl{font-weight:700; font-size:.82rem;}
   .legend-item .pr{color:var(--maroon); font-weight:700; font-size:.82rem; font-variant-numeric:tabular-nums;}
   .size-readout{font-size:.78rem; color:var(--maroon); font-weight:600; margin-top:5px; font-variant-numeric:tabular-nums; min-height:1.1em;}
+  p.note{font-size:.78rem; color:var(--danger); font-weight:700;}
+  p.note:empty{display:none;}
   .inline-chart{margin-top:8px; padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--card);}
   .inline-chart table.sz{font-size:.74rem;}
   .inline-chart table.sz th, .inline-chart table.sz td{padding:4px 5px;}
@@ -256,7 +258,8 @@
         <div class="legend-item" style="border-style:solid;"><div class="ttl">กางเกง</div><div class="pr">350 ฿</div></div>
       </div>
       <p class="hint">เลือกได้อิสระ ติ๊กเฉพาะรายการที่ต้องการ — เสื้อกล้าม, เสื้อแขนสั้น, กางเกง ราคาชิ้นละ 350 ฿ เท่ากันหมด ไม่บังคับซื้อเป็นชุด อยากได้กี่ชิ้น แบบไหนก็เลือกได้ตามใจ (กางเกงไม่มีสกรีนชื่อ-เบอร์)</p>
-      <p class="hint" style="color:var(--maroon); font-weight:600; margin-bottom:16px;">⚠ ไซส์เดียวกันของสองแบบเสื้อ "ไม่เท่ากัน" (เช่น XL เสื้อกล้าม ≠ XL เสื้อแขนสั้น) แถมช่วงไซส์ก็ไม่เท่ากัน — เสื้อกล้ามมีถึง 4XL ส่วนเสื้อแขนสั้นสั่งได้ถึง 10XL ระบบจะโชว์ตัวเลขรอบอก/ความยาวจริงใต้ช่องเลือกไซส์ให้ทุกครั้งที่เลือก เช็คก่อนกดยืนยันทุกครั้ง</p>
+      <p class="hint" style="color:var(--maroon); font-weight:600; margin-bottom:12px;">⚠ ไซส์เดียวกันของสองแบบเสื้อ "ไม่เท่ากัน" (เช่น XL เสื้อกล้าม ≠ XL เสื้อแขนสั้น) แถมช่วงไซส์ก็ไม่เท่ากัน — เสื้อกล้ามมีถึง 4XL ส่วนเสื้อแขนสั้นสั่งได้ถึง 10XL ระบบจะโชว์ตัวเลขรอบอก/ความยาวจริงใต้ช่องเลือกไซส์ให้ทุกครั้งที่เลือก เช็คก่อนกดยืนยันทุกครั้ง</p>
+      <div id="ref-charts" style="margin-bottom:16px;"></div>
 
       <div class="entries" id="entries"></div>
 
@@ -446,7 +449,12 @@
   function $all(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));}
   function sizeOptionsForGarment(key, sel){
     var c = SIZE_CHART[key];
-    return '<option value="">-- เลือกไซส์ --</option>' + c.sizes.map(function(s){return '<option value="'+s+'"'+(sel===s?' selected':'')+'>'+s+'</option>';}).join('');
+    return '<option value="">-- เลือกไซส์ --</option>' + c.sizes.map(function(s, idx){
+      var measure = key==='shorts'
+        ? ('รอบเอว '+c.waist[idx]+' • ยาว '+c.length[idx]+'"')
+        : ('รอบอก '+c.chest[idx]+'" • ยาว '+c.length[idx]+'"');
+      return '<option value="'+s+'"'+(sel===s?' selected':'')+'>'+s+' — '+measure+'</option>';
+    }).join('');
   }
   function isSpecial(key, sizeLabel){
     if(!key || !sizeLabel) return false;
@@ -466,6 +474,17 @@
     if(isSpecial(key, sizeLabel)){ base += ' • ไซส์พิเศษ +'+PRICE.specialSurcharge+' ฿'; }
     return base;
   }
+  function sizeCompareWarning(key, sizeLabel){
+    if(!key || !sizeLabel || key==='shorts') return '';
+    var c = SIZE_CHART[key];
+    var idx = c.sizes.indexOf(sizeLabel);
+    if(idx<0) return '';
+    var measure = 'รอบอก '+c.chest[idx]+'" • ยาว '+c.length[idx]+'"';
+    var lead = key==='tank'
+      ? 'ขนาดเสื้อกล้ามจะใหญ่มาก โปรดตรวจสอบขนาดรอบอกของชุดอีกครั้ง'
+      : 'ขนาดเสื้อแขนสั้นจะเล็กกว่าขนาดเสื้อกล้าม โปรดตรวจสอบขนาดรอบอกของชุดอีกครั้ง';
+    return lead+' ('+measure+')';
+  }
   function catOptions(sel){
     return '<option value="">-- เลือกรุ่น --</option>' + CATS.map(function(c){return '<option value="'+c+'"'+(sel===c?' selected':'')+'>'+c+'</option>';}).join('');
   }
@@ -482,13 +501,15 @@
   function buildChartTable(elId, key){
     $('#'+elId).innerHTML = chartTableInner(key);
   }
-  function inlineChartHtml(key){
+  function inlineChartHtml(key, showTitle){
     var c = SIZE_CHART[key];
     return '<div class="inline-chart">'+
+      (showTitle ? '<p style="font-weight:700; margin:0 0 6px; color:var(--maroon-deep);">'+c.label+'</p>' : '')+
       '<div style="overflow-x:auto;"><table class="sz">'+chartTableInner(key)+'</table></div>'+
       '<p class="hint" style="margin:4px 0 0;">*ไซส์พิเศษ เริ่มตั้งแต่ '+c.specialFrom+'</p>'+
     '</div>';
   }
+  $('#ref-charts').innerHTML = inlineChartHtml('tank', true) + inlineChartHtml('short', true) + inlineChartHtml('shorts', true);
   buildChartTable('sz-tank', 'tank');
   buildChartTable('sz-short', 'short');
   buildChartTable('sz-shorts', 'shorts');
@@ -538,6 +559,7 @@
       '<div class="addon-detail show">'+
         '<div class="field"><label class="req">ไซส์'+g.label+'</label><select data-f="size" data-g="'+g.key+'" data-i="'+i+'">'+sizeOptionsForGarment(g.key, gEntry.size)+'</select>'+
           '<p class="size-readout" id="ro-'+g.key+'-'+i+'">'+measureText(g.key, gEntry.size)+'</p>'+
+          '<p class="note" id="cw-'+g.key+'-'+i+'" style="margin-top:5px;">'+sizeCompareWarning(g.key, gEntry.size)+'</p>'+
           inlineChartHtml(g.key)+
         '</div>'+
         (g.print ? (
@@ -600,6 +622,8 @@
     GARMENTS.forEach(function(g){
       var ro = document.getElementById('ro-'+g.key+'-'+i);
       if(ro) ro.textContent = measureText(g.key, e[g.key].size);
+      var cw = document.getElementById('cw-'+g.key+'-'+i);
+      if(cw) cw.textContent = sizeCompareWarning(g.key, e[g.key].size);
     });
   }
 
