@@ -899,7 +899,8 @@
       name: state.name, phone: state.phone, line: state.line, address: state.address,
       shipMethod: state.shipMethod, sName: state.sName, sAddr: state.sAddr, sPhone: state.sPhone,
       total: total(),
-      entries: state.entries,
+      shipFee: state.shipMethod === 'delivery' ? shipFeeFor(totalPieces()) : 0,
+      entries: state.entries.map(function(e){ return Object.assign({}, e, {entryTotal: entryPrice(e)}); }),
       slipFileName: state.slipFile ? state.slipFile.name : '',
       slipMime: state.slipFile ? state.slipFile.type : '',
       slipBase64: slipBase64 || ''

@@ -15,8 +15,10 @@ var HEADERS = [
   'สั่งกางเกง', 'ไซส์กางเกง', 'ไม่รับกางเกง (ยืนยันแล้ว)',
   'หมายเหตุ',
   'วิธีจัดส่ง', 'ผู้รับ(จัดส่ง)', 'ที่อยู่จัดส่ง', 'เบอร์โทร(จัดส่ง)',
-  'ยอดรวมออเดอร์ (บาท)', 'ลิงก์สลิปการโอนเงิน'
+  'ค่าจัดส่ง (บาท)', 'ยอดรวมออเดอร์ (บาท)', 'ลิงก์สลิปการโอนเงิน'
 ];
+// 'ค่าจัดส่ง' และยอดรวมของบรรทัดแรกในแต่ละ OrderID เท่านั้นที่รวมค่าส่ง —
+// บรรทัดอื่นของ OrderID เดียวกันจะโชว์แค่ยอดของรายการนั้นเอง กัน sum ทั้งคอลัมน์ผิดจากยอดซ้ำ
 
 function getSheet_() {
   var ss = SpreadsheetApp.openById(SHEET_ID);
@@ -65,10 +67,14 @@ function doPost(e) {
     var sheet = getSheet_();
     var shipLabel = data.shipMethod === 'pickup' ? 'รับเองที่โรงยิมท่าพระจันทร์' : 'จัดส่งที่บ้าน';
 
-    data.entries.forEach(function (en) {
+    var shipFee = data.shipFee || 0;
+    data.entries.forEach(function (en, idx) {
       var tank = en.tank || {};
       var short = en.short || {};
       var shorts = en.shorts || {};
+      var isFirstRow = idx === 0;
+      var rowShipFee = isFirstRow ? shipFee : '';
+      var rowTotal = (en.entryTotal || 0) + (isFirstRow ? shipFee : 0);
       sheet.appendRow([
         now, orderId,
         data.name, data.phone, data.line || '',
@@ -78,7 +84,7 @@ function doPost(e) {
         shorts.checked ? 'ใช่' : 'ไม่', shorts.size || '', (!shorts.checked && en.shortsSkip) ? 'ใช่' : '',
         en.note || '',
         shipLabel, data.sName || '', data.sAddr || '', data.sPhone || '',
-        data.total || 0, slipUrl
+        rowShipFee, rowTotal, slipUrl
       ]);
     });
 
