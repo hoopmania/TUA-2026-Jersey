@@ -124,6 +124,7 @@ function doPost(e) {
       var rowShipFee = isFirstRow ? shipFee : '';
       var rowTotal = (en.entryTotal || 0) + (isFirstRow ? shipFee : 0);
       var transferAmount = isFirstRow ? (data.total || 0) : 0;
+      var rowSlipUrl = isFirstRow ? slipUrl : '';
       sheet.appendRow([
         now, orderId,
         data.name, data.phone, data.line || '',
@@ -133,7 +134,7 @@ function doPost(e) {
         shorts.checked ? 'ใช่' : 'ไม่', shorts.size || '', (!shorts.checked && en.shortsSkip) ? 'ใช่' : '',
         en.note || '',
         shipLabel, data.sName || '', data.sAddr || '', data.sPhone || '',
-        rowShipFee, rowTotal, transferAmount, slipUrl
+        rowShipFee, rowTotal, transferAmount, rowSlipUrl
       ]);
     });
 
@@ -177,6 +178,8 @@ function shipFeeForPieces_(pieceCount) {
 // "ค่าจัดส่ง (บาท)", "ยอดรวมออเดอร์ (บาท)" และ "ยอดแจ้งการโอน (บาท)" ของแถวที่บันทึกไว้ก่อนหน้านี้
 // ใหม่ทั้งหมด ให้ตรงกับรูปแบบใหม่ (ยอดต่อแถว + ค่าส่ง/ยอดแจ้งโอนอยู่แถวแรกของแต่ละ OrderID เท่านั้น)
 // โดยคำนวณจากคอลัมน์ สั่ง.../ไซส์... ที่มีอยู่แล้วในแต่ละแถว ไม่ได้อ่านค่ายอดรวมเดิมเลย
+// นอกจากนี้จะเคลียร์ "ลิงก์สลิปการโอนเงิน" ของแถวที่ไม่ใช่แถวแรกของแต่ละ OrderID ให้ว่างด้วย
+// (แถวแรกไม่ถูกแตะเลย เก็บค่าที่มีอยู่ไว้เหมือนเดิม)
 //
 // ข้อควรรู้: ใช้ราคา/เกณฑ์ค่าส่งชุดปัจจุบัน (PRICE_PIECE, PRICE_SPECIAL_SURCHARGE, SHIP_TIERS_GS
 // ด้านบนไฟล์นี้) กับทุกแถว — ถ้าราคาหรือเกณฑ์ค่าส่งเคยเปลี่ยนระหว่างทาง ออเดอร์ที่สั่งตอนราคาเก่า
@@ -256,6 +259,9 @@ function backfillOrderTotals() {
     values[i][C_SHIPFEE] = isFirst ? shipFee : '';
     values[i][C_TOTAL] = rowCost[i] + (isFirst ? shipFee : 0);
     values[i][C_TRANSFER] = isFirst ? (orderItemSum[oid] + shipFee) : 0;
+    // ลิงก์สลิป: แถวแรกของ OrderID ไม่แตะเลย (ค่าที่มีอยู่แล้วถูกต้องอยู่แล้ว) แถวถัดไปเคลียร์ทิ้ง
+    // เพราะเป็นออเดอร์เดียวกัน ใช้สลิปใบเดียวกัน ไม่จำเป็นต้องซ้ำทุกแถว
+    if (!isFirst) { values[i][C_SLIP] = ''; }
   });
 
   range.setValues(values);
