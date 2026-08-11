@@ -546,6 +546,12 @@
   function garmentNeedsPrintWarning(g, gEntry){
     return g.print && gEntry.checked && (!gEntry.printName.trim() || gEntry.printNum==='') && !gEntry.printSkip;
   }
+  function printNameError(name){
+    if(!name) return '';
+    if(name.length > 12) return 'ชื่อสกรีนยาวเกินไป ('+name.length+'/12 ตัวอักษร) — ต้องไม่เกิน 12 ตัวอักษร รวมเว้นวรรค';
+    if(!/^[A-Za-z ]+$/.test(name)) return 'ใช้ได้เฉพาะตัวอักษรภาษาอังกฤษ A-Z กับเว้นวรรคเท่านั้น ห้ามใช้ภาษาไทยหรืออักขระอื่น';
+    return '';
+  }
 
   function garmentRowHtml(i, g, gEntry){
     var printWarn = garmentNeedsPrintWarning(g, gEntry);
@@ -564,7 +570,11 @@
         '</div>'+
         (g.print ? (
           '<div class="row2">'+
-            '<div class="field"><label>ชื่อสกรีนหลังเสื้อ <span class="opt">(ไม่บังคับ)</span></label><input type="text" data-f="printName" data-g="'+g.key+'" data-i="'+i+'" maxlength="15" value="'+esc(gEntry.printName)+'" placeholder="Somchai"></div>'+
+            '<div class="field"><label>ชื่อสกรีนหลังเสื้อ <span class="opt">(ไม่บังคับ)</span></label>'+
+              '<p class="hint" style="margin:0 0 6px;">ภาษาอังกฤษเท่านั้น (A-Z) ไม่เกิน 12 ตัวอักษร รวมเว้นวรรค</p>'+
+              '<input type="text" data-f="printName" data-g="'+g.key+'" data-i="'+i+'" maxlength="12" value="'+esc(gEntry.printName)+'" placeholder="Somchai">'+
+              '<p class="note" id="pn-'+g.key+'-'+i+'">'+printNameError(gEntry.printName)+'</p>'+
+            '</div>'+
             '<div class="field"><label>เบอร์เสื้อ <span class="opt">(ไม่บังคับ)</span></label><input type="number" data-f="printNum" data-g="'+g.key+'" data-i="'+i+'" min="0" max="99" value="'+esc(gEntry.printNum)+'" placeholder="6"></div>'+
           '</div>'+
           (printWarn ? (
@@ -637,6 +647,10 @@
     var t = ev.target, i = t.dataset.i, g = t.dataset.g, f = t.dataset.f;
     if(f==null || i==null) return;
     if(g){ state.entries[+i][g][f] = t.value; } else { state.entries[+i][f] = t.value; }
+    if(f==='printName' && g){
+      var pn = document.getElementById('pn-'+g+'-'+i);
+      if(pn) pn.textContent = printNameError(t.value);
+    }
     updateCart(); updateReadouts(+i);
   });
   entriesEl.addEventListener('click', function(ev){
@@ -805,8 +819,10 @@
       if(!anyChecked){ problems.push(who+': ยังไม่ได้ติ๊กรายการที่จะสั่งเลย'); return; }
       if(e.tank.checked && !e.tank.size){ problems.push(who+': ยังไม่ได้เลือกไซส์เสื้อกล้าม'); }
       if(e.tank.checked && garmentNeedsPrintWarning(GARMENTS[0], e.tank)){ problems.push(who+': ยังไม่ได้กดยืนยันเรื่องชื่อ/เบอร์เสื้อกล้าม'); }
+      if(e.tank.checked && printNameError(e.tank.printName)){ problems.push(who+': ชื่อสกรีนเสื้อกล้ามไม่ถูกต้อง — '+printNameError(e.tank.printName)); }
       if(e.short.checked && !e.short.size){ problems.push(who+': ยังไม่ได้เลือกไซส์เสื้อแขนสั้น'); }
       if(e.short.checked && garmentNeedsPrintWarning(GARMENTS[1], e.short)){ problems.push(who+': ยังไม่ได้กดยืนยันเรื่องชื่อ/เบอร์เสื้อแขนสั้น'); }
+      if(e.short.checked && printNameError(e.short.printName)){ problems.push(who+': ชื่อสกรีนเสื้อแขนสั้นไม่ถูกต้อง — '+printNameError(e.short.printName)); }
       if(e.shorts.checked && !e.shorts.size){ problems.push(who+': ยังไม่ได้เลือกไซส์กางเกง'); }
       if(entryNeedsShortsWarning(e)){ problems.push(who+': ยังไม่ได้กดยืนยันเรื่องกางเกง'); }
     });
