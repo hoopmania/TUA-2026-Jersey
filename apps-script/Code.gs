@@ -50,15 +50,35 @@ function getSheet_() {
     sheet.setFrozenRows(1);
     return sheet;
   }
-  // เผื่อ header แถวแรกเป็นของเวอร์ชันเก่า (คอลัมน์ไม่ตรงกับ HEADERS ปัจจุบัน) — แก้ label แถวแรกให้ตรงเสมอ
-  // หมายเหตุ: แก้แค่ "ป้ายชื่อ" แถว 1 เท่านั้น ไม่แตะแถวข้อมูลใด ๆ
-  var headerRange = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), HEADERS.length));
-  var headerVals = headerRange.getValues()[0].slice(0, HEADERS.length);
-  var mismatch = HEADERS.some(function (h, i) { return headerVals[i] !== h; });
-  if (mismatch) {
-    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
-  }
+  migrateHeaders_(sheet);
   return sheet;
+}
+
+// เทียบ header แถวแรกกับ HEADERS ปัจจุบัน คอลัมน์ไหนที่ยังไม่เคยมีให้ "แทรกคอลัมน์จริง" ที่ตำแหน่ง
+// นั้น (insertColumnBefore) ไม่ใช่แค่เขียนทับป้ายชื่อ — insertColumnBefore จะเลื่อนคอลัมน์ที่เหลือ
+// (พร้อมข้อมูลทุกแถว) ออกไปทางขวาให้เองโดยอัตโนมัติ ข้อมูลเดิมจึงยังตรงกับคอลัมน์เดิมของมันเสมอ
+//
+// ***บั๊กที่เคยเกิด***: โค้ดเวอร์ชันก่อนหน้านี้เขียนทับแค่ "ป้ายชื่อ" แถว 1 ให้ตรงกับ HEADERS ใหม่
+// โดยไม่ได้แทรกคอลัมน์จริง ทำให้ตอนเพิ่มคอลัมน์ "ค่าจัดส่ง"/"ยอดแจ้งการโอน" เข้ามาตรงกลาง ป้ายชื่อ
+// เลื่อนตำแหน่งแต่ข้อมูลเดิม (เช่น ลิงก์สลิปการโอนเงิน) ไม่ได้เลื่อนตาม ทำให้ข้อมูลคอลัมน์นั้นดูหายไป
+// และตอนรัน backfillOrderTotals ก็ไปเขียนทับข้อมูลเดิมที่อยู่ผิดตำแหน่งนั้นซ้ำอีกที — แก้ให้แทรก
+// คอลัมน์จริงแล้ว ปัญหานี้จะไม่เกิดซ้ำ
+function migrateHeaders_(sheet) {
+  var lastCol = Math.max(sheet.getLastColumn(), 1);
+  var current = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  HEADERS.forEach(function (name, wantIdx) {
+    var pos = current.indexOf(name);
+    if (pos === wantIdx) return; // อยู่ตำแหน่งที่ถูกต้องอยู่แล้ว ข้ามไป
+    if (pos !== -1) {
+      // ชื่อคอลัมน์นี้มีอยู่แล้วแต่ตำแหน่งไม่ตรงกับ HEADERS — ไม่ย้ายให้อัตโนมัติเพราะเสี่ยงชนข้อมูล
+      // คอลัมน์อื่น ให้แจ้ง error แทนเพื่อให้เข้ามาแก้เรียงคอลัมน์เองก่อน
+      throw new Error('คอลัมน์ "' + name + '" อยู่ตำแหน่งที่ ' + (pos + 1) + ' แต่ควรอยู่ที่ ' + (wantIdx + 1) + ' — เรียงคอลัมน์ใน Sheet ให้ตรงกับ HEADERS ก่อน แล้วค่อยรันใหม่');
+    }
+    // ยังไม่เคยมีคอลัมน์นี้เลย — แทรกคอลัมน์ใหม่จริง ๆ ที่ตำแหน่งนี้ (ข้อมูลเดิมเลื่อนขวาอัตโนมัติ)
+    sheet.insertColumnBefore(wantIdx + 1);
+    sheet.getRange(1, wantIdx + 1).setValue(name);
+    current.splice(wantIdx, 0, name);
+  });
 }
 
 function getSlipFolder_() {
@@ -186,6 +206,13 @@ function backfillOrderTotals() {
   var C_SHIPFEE = colIdx('ค่าจัดส่ง (บาท)');
   var C_TOTAL = colIdx('ยอดรวมออเดอร์ (บาท)');
   var C_TRANSFER = colIdx('ยอดแจ้งการโอน (บาท)');
+  var C_SLIP = colIdx('ลิงก์สลิปการโอนเงิน');
+
+  // กันชนซ้ำ: คอลัมน์ที่ฟังก์ชันนี้จะเขียนทับ ต้องไม่ใช่คอลัมน์เดียวกับลิงก์สลิป (หรือคอลัมน์อื่น
+  // ที่ไม่ควรแตะ) เด็ดขาด — ถ้าเกิดชนกันแปลว่า header ผิดตำแหน่ง ให้หยุดทันทีก่อนเขียนอะไรลงไป
+  [C_SHIPFEE, C_TOTAL, C_TRANSFER].forEach(function (idx) {
+    if (idx === C_SLIP) throw new Error('ตำแหน่งคอลัมน์ที่จะคำนวณชนกับคอลัมน์ "ลิงก์สลิปการโอนเงิน" — หยุดทำงานเพื่อไม่ให้ข้อมูลเสียหาย เช็ค header แถว 1 ก่อนรันใหม่');
+  });
 
   var range = sheet.getRange(2, 1, lastRow - 1, lastCol);
   var values = range.getValues();
