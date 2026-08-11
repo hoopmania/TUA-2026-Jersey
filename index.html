@@ -549,12 +549,25 @@
   function printNameError(name){
     if(!name) return '';
     if(name.length > 12) return 'ชื่อสกรีนยาวเกินไป ('+name.length+'/12 ตัวอักษร) — ต้องไม่เกิน 12 ตัวอักษร รวมเว้นวรรค';
-    if(!/^[A-Za-z ]+$/.test(name)) return 'ใช้ได้เฉพาะตัวอักษรภาษาอังกฤษ A-Z กับเว้นวรรคเท่านั้น ห้ามใช้ภาษาไทยหรืออักขระอื่น';
+    if(!/^[A-Za-z0-9 ]+$/.test(name)) return 'ใช้ได้เฉพาะตัวอักษรภาษาอังกฤษ A-Z กับเว้นวรรคเท่านั้น ห้ามใช้ภาษาไทยหรืออักขระอื่น';
     return '';
   }
 
+  function garmentByKey(key){
+    for(var k=0;k<GARMENTS.length;k++){ if(GARMENTS[k].key===key) return GARMENTS[k]; }
+    return null;
+  }
+  function printWarnBoxHtml(i, g, gEntry){
+    if(!garmentNeedsPrintWarning(g, gEntry)) return '';
+    return '<div class="warn-box" style="margin-top:0;">'+
+      '<span style="font-size:1.15rem;">⚠️</span>'+
+      '<span><span class="t">ยังไม่ได้ระบุชื่อสกรีนหลังเสื้อ หรือ เบอร์เสื้อ</span>'+
+      '<div class="p">ถ้าไม่ต้องการสกรีนชื่อ/เบอร์บน'+g.label+' กดยืนยันได้เลย</div>'+
+      '<div class="btn-row"><button type="button" class="btn btn-ghost" data-act="skipprint" data-g="'+g.key+'" data-i="'+i+'">ยืนยัน ไม่ต้องการสกรีนชื่อหรือเบอร์</button></div>'+
+      '</span>'+
+    '</div>';
+  }
   function garmentRowHtml(i, g, gEntry){
-    var printWarn = garmentNeedsPrintWarning(g, gEntry);
     return ''+
     '<div class="addon-box">'+
       '<label class="addon-toggle">'+
@@ -577,15 +590,7 @@
             '</div>'+
             '<div class="field"><label>เบอร์เสื้อ <span class="opt">(ไม่บังคับ)</span></label><input type="number" data-f="printNum" data-g="'+g.key+'" data-i="'+i+'" min="0" max="99" value="'+esc(gEntry.printNum)+'" placeholder="6"></div>'+
           '</div>'+
-          (printWarn ? (
-            '<div class="warn-box" style="margin-top:0;">'+
-              '<span style="font-size:1.15rem;">⚠️</span>'+
-              '<span><span class="t">ยังไม่ได้ระบุชื่อสกรีนหลังเสื้อ หรือ เบอร์เสื้อ</span>'+
-              '<div class="p">ถ้าไม่ต้องการสกรีนชื่อ/เบอร์บน'+g.label+' กดยืนยันได้เลย</div>'+
-              '<div class="btn-row"><button type="button" class="btn btn-ghost" data-act="skipprint" data-g="'+g.key+'" data-i="'+i+'">ยืนยัน ไม่ต้องการสกรีนชื่อหรือเบอร์</button></div>'+
-              '</span>'+
-            '</div>'
-          ) : '')
+          '<div id="pw-'+g.key+'-'+i+'">'+printWarnBoxHtml(i, g, gEntry)+'</div>'
         ) : '')+
       '</div>') : '')+
     '</div>';
@@ -650,6 +655,10 @@
     if(f==='printName' && g){
       var pn = document.getElementById('pn-'+g+'-'+i);
       if(pn) pn.textContent = printNameError(t.value);
+    }
+    if((f==='printName' || f==='printNum') && g){
+      var pw = document.getElementById('pw-'+g+'-'+i);
+      if(pw) pw.innerHTML = printWarnBoxHtml(+i, garmentByKey(g), state.entries[+i][g]);
     }
     updateCart(); updateReadouts(+i);
   });
