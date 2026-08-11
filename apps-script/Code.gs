@@ -47,21 +47,20 @@ function doPost(e) {
     if (!data.entries || data.entries.length === 0) {
       return jsonOut_({ ok: false, error: 'ไม่มีรายการชุดที่สั่ง' });
     }
+    if (!data.slipBase64) {
+      return jsonOut_({ ok: false, error: 'ไม่พบไฟล์สลิปการโอนเงิน — ต้องแนบสลิปก่อนถึงจะบันทึกคำสั่งซื้อได้' });
+    }
 
     var now = new Date();
     var orderId = 'TU-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyMMdd-HHmmss');
 
     // แนบไฟล์สลิปไปที่ Google Drive (ครั้งเดียวต่อออเดอร์ ใช้ลิงก์เดียวกันทุกแถว)
-    var slipUrl = '';
-    if (data.slipBase64) {
-      var blob = Utilities.newBlob(
-        Utilities.base64Decode(data.slipBase64),
-        data.slipMime || 'application/octet-stream',
-        orderId + '_' + (data.slipFileName || 'slip')
-      );
-      var file = getSlipFolder_().createFile(blob);
-      slipUrl = file.getUrl();
-    }
+    var blob = Utilities.newBlob(
+      Utilities.base64Decode(data.slipBase64),
+      data.slipMime || 'application/octet-stream',
+      orderId + '_' + (data.slipFileName || 'slip')
+    );
+    var slipUrl = getSlipFolder_().createFile(blob).getUrl();
 
     var sheet = getSheet_();
     var shipLabel = data.shipMethod === 'pickup' ? 'รับเองที่โรงยิมท่าพระจันทร์' : 'จัดส่งที่บ้าน';
