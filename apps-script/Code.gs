@@ -20,6 +20,23 @@ var HEADERS = [
 // 'ค่าจัดส่ง' และยอดรวมของบรรทัดแรกในแต่ละ OrderID เท่านั้นที่รวมค่าส่ง —
 // บรรทัดอื่นของ OrderID เดียวกันจะโชว์แค่ยอดของรายการนั้นเอง กัน sum ทั้งคอลัมน์ผิดจากยอดซ้ำ
 
+// ราคา/เกณฑ์ค่าส่งปัจจุบัน — ใช้ทั้งตอนคำนวณยอดใหม่ (backfillOrderTotals) และต้องตรงกับค่าใน index.html
+var PRICE_PIECE = 350;
+var PRICE_SPECIAL_SURCHARGE = 30;
+var SIZE_CHART_GS = {
+  tank:   { sizes: ["XS","S","M","L","XL","2XL","3XL","4XL"], specialFrom: '3XL' },
+  short:  { sizes: ["XS","S","M","L","XL","2XL","3XL","4XL","5XL","6XL","7XL","8XL","9XL","10XL"], specialFrom: '5XL' },
+  shorts: { sizes: ["XS","S","M","L","XL","2XL","3XL","4XL"], specialFrom: '3XL' }
+};
+var SHIP_TIERS_GS = [
+  { upTo: 1, fee: 40 },
+  { upTo: 2, fee: 60 },
+  { upTo: 4, fee: 80 },
+  { upTo: 6, fee: 100 },
+  { upTo: 8, fee: 130 },
+  { upTo: Infinity, fee: 160 }
+];
+
 function getSheet_() {
   var ss = SpreadsheetApp.openById(SHEET_ID);
   var sheet = ss.getSheetByName(SHEET_NAME);
@@ -29,6 +46,15 @@ function getSheet_() {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(HEADERS);
     sheet.setFrozenRows(1);
+    return sheet;
+  }
+  // เผื่อ header แถวแรกเป็นของเวอร์ชันเก่า (คอลัมน์ไม่ตรงกับ HEADERS ปัจจุบัน) — แก้ label แถวแรกให้ตรงเสมอ
+  // หมายเหตุ: แก้แค่ "ป้ายชื่อ" แถว 1 เท่านั้น ไม่แตะแถวข้อมูลใด ๆ
+  var headerRange = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), HEADERS.length));
+  var headerVals = headerRange.getValues()[0].slice(0, HEADERS.length);
+  var mismatch = HEADERS.some(function (h, i) { return headerVals[i] !== h; });
+  if (mismatch) {
+    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
   }
   return sheet;
 }
@@ -102,4 +128,105 @@ function jsonOut_(obj) {
 // เรียกฟังก์ชันนี้ครั้งเดียวจาก editor (Run > setupHeaders) ถ้าอยากสร้างหัวตารางไว้ล่วงหน้าโดยไม่ต้องรอออเดอร์แรก
 function setupHeaders() {
   getSheet_();
+}
+
+function isSpecialSize_(garmentKey, sizeLabel) {
+  if (!sizeLabel) return false;
+  var c = SIZE_CHART_GS[garmentKey];
+  var idx = c.sizes.indexOf(sizeLabel);
+  var specialIdx = c.sizes.indexOf(c.specialFrom);
+  return idx >= 0 && specialIdx >= 0 && idx >= specialIdx;
+}
+
+function garmentCost_(garmentKey, checked, sizeLabel) {
+  if (!checked || !sizeLabel) return 0;
+  return PRICE_PIECE + (isSpecialSize_(garmentKey, sizeLabel) ? PRICE_SPECIAL_SURCHARGE : 0);
+}
+
+function shipFeeForPieces_(pieceCount) {
+  for (var t = 0; t < SHIP_TIERS_GS.length; t++) {
+    if (pieceCount <= SHIP_TIERS_GS[t].upTo) return SHIP_TIERS_GS[t].fee;
+  }
+  return SHIP_TIERS_GS[SHIP_TIERS_GS.length - 1].fee;
+}
+
+// รันครั้งเดียวจาก Apps Script editor (เลือกฟังก์ชัน backfillOrderTotals แล้วกด Run) เพื่อคำนวณ
+// "ค่าจัดส่ง (บาท)" กับ "ยอดรวมออเดอร์ (บาท)" ของแถวที่บันทึกไว้ก่อนหน้านี้ใหม่ทั้งหมด ให้ตรงกับ
+// รูปแบบใหม่ (ยอดต่อแถว + ค่าส่งอยู่แถวแรกของแต่ละ OrderID เท่านั้น) โดยคำนวณจากคอลัมน์
+// สั่ง.../ไซส์... ที่มีอยู่แล้วในแต่ละแถว ไม่ได้อ่านค่ายอดรวมเดิมเลย
+//
+// ข้อควรรู้: ใช้ราคา/เกณฑ์ค่าส่งชุดปัจจุบัน (PRICE_PIECE, PRICE_SPECIAL_SURCHARGE, SHIP_TIERS_GS
+// ด้านบนไฟล์นี้) กับทุกแถว — ถ้าราคาหรือเกณฑ์ค่าส่งเคยเปลี่ยนระหว่างทาง ออเดอร์ที่สั่งตอนราคาเก่า
+// จะถูกคำนวณด้วยราคาปัจจุบันแทน (ไม่ทราบราคาที่ใช้จริง ณ ตอนนั้น)
+function backfillOrderTotals() {
+  var sheet = getSheet_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) { Logger.log('ไม่มีแถวข้อมูล'); return; }
+
+  var lastCol = sheet.getLastColumn();
+  var headerVals = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  function colIdx(name) {
+    var i = headerVals.indexOf(name);
+    if (i === -1) throw new Error('ไม่พบคอลัมน์ "' + name + '" ในแถวหัวตาราง — เช็คว่า header ตรงกับ HEADERS ปัจจุบันหรือยัง');
+    return i;
+  }
+
+  var C_ORDERID = colIdx('OrderID');
+  var C_TANK_ON = colIdx('สั่งเสื้อกล้าม');
+  var C_TANK_SIZE = colIdx('ไซส์เสื้อกล้าม');
+  var C_SHORT_ON = colIdx('สั่งเสื้อแขนสั้น');
+  var C_SHORT_SIZE = colIdx('ไซส์เสื้อแขนสั้น');
+  var C_SHORTS_ON = colIdx('สั่งกางเกง');
+  var C_SHORTS_SIZE = colIdx('ไซส์กางเกง');
+  var C_SHIP_METHOD = colIdx('วิธีจัดส่ง');
+  var C_SHIPFEE = colIdx('ค่าจัดส่ง (บาท)');
+  var C_TOTAL = colIdx('ยอดรวมออเดอร์ (บาท)');
+
+  var range = sheet.getRange(2, 1, lastRow - 1, lastCol);
+  var values = range.getValues();
+
+  // pass 1: ต้นทุนของแต่ละแถว + รวมจำนวนชิ้นทั้งหมดต่อ OrderID (ไว้คำนวณค่าส่ง)
+  var rowCost = [];
+  var orderPieces = {};
+  var orderIsDelivery = {};
+  var skipped = 0;
+  values.forEach(function (row) {
+    var oid = row[C_ORDERID];
+    if (!oid) { rowCost.push(0); skipped++; return; }
+
+    var tankOn = row[C_TANK_ON] === 'ใช่';
+    var shortOn = row[C_SHORT_ON] === 'ใช่';
+    var shortsOn = row[C_SHORTS_ON] === 'ใช่';
+
+    var cost = garmentCost_('tank', tankOn, row[C_TANK_SIZE])
+      + garmentCost_('short', shortOn, row[C_SHORT_SIZE])
+      + garmentCost_('shorts', shortsOn, row[C_SHORTS_SIZE]);
+    rowCost.push(cost);
+
+    var pieces = (tankOn ? 1 : 0) + (shortOn ? 1 : 0) + (shortsOn ? 1 : 0);
+    orderPieces[oid] = (orderPieces[oid] || 0) + pieces;
+    if (row[C_SHIP_METHOD] === 'จัดส่งที่บ้าน') orderIsDelivery[oid] = true;
+  });
+
+  // pass 2: เขียนค่าจัดส่ง (เฉพาะแถวแรกที่เจอ OrderID นั้น) + ยอดรวมออเดอร์ของแต่ละแถว
+  var seenOrder = {};
+  var orderCount = 0;
+  values.forEach(function (row, i) {
+    var oid = row[C_ORDERID];
+    if (!oid) return;
+    var isFirst = !seenOrder[oid];
+    seenOrder[oid] = true;
+    if (isFirst) orderCount++;
+
+    var shipFee = (isFirst && orderIsDelivery[oid]) ? shipFeeForPieces_(orderPieces[oid]) : 0;
+    values[i][C_SHIPFEE] = isFirst ? shipFee : '';
+    values[i][C_TOTAL] = rowCost[i] + (isFirst ? shipFee : 0);
+  });
+
+  range.setValues(values);
+
+  var grandTotal = values.reduce(function (s, row) { return s + (Number(row[C_TOTAL]) || 0); }, 0);
+  Logger.log('แก้แล้ว ' + values.length + ' แถว (' + orderCount + ' ออเดอร์, ข้าม ' + skipped + ' แถวที่ไม่มี OrderID)');
+  Logger.log('ยอดรวมทั้งหมดหลัง backfill = ' + grandTotal + ' บาท — เอาไปเทียบกับยอดโอนจริงได้');
 }
