@@ -1,0 +1,151 @@
+<title>เช็คสถานะคำสั่งซื้อ — TU Basketball Alumni</title>
+<style>
+  :root{
+    --maroon:#8A1F2B; --maroon-deep:#5E121B; --gold:#B8892F;
+    --paper:#E9DFC5; --card:#F1E9D6; --input-bg:#FFFFFF; --ink:#241512; --muted:#7A6A5E;
+    --line:rgba(36,21,18,0.18); --success:#2F7D4F; --danger:#B8471F; --radius:14px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --maroon:#E2596B; --maroon-deep:#F0A0AC; --gold:#E4B856;
+      --paper:#1B1512; --card:#241C17; --input-bg:#4A3B2C; --ink:#F1E9DC; --muted:#B8A996;
+      --line:rgba(241,233,220,0.16); --success:#5FBE86; --danger:#E2725A;
+    }
+  }
+  :root[data-theme="dark"]{
+    --maroon:#E2596B; --maroon-deep:#F0A0AC; --gold:#E4B856;
+    --paper:#1B1512; --card:#241C17; --input-bg:#4A3B2C; --ink:#F1E9DC; --muted:#B8A996;
+    --line:rgba(241,233,220,0.16); --success:#5FBE86; --danger:#E2725A;
+  }
+  :root[data-theme="light"]{
+    --maroon:#8A1F2B; --maroon-deep:#5E121B; --gold:#B8892F;
+    --paper:#E9DFC5; --card:#F1E9D6; --input-bg:#FFFFFF; --ink:#241512; --muted:#7A6A5E;
+    --line:rgba(36,21,18,0.18); --success:#2F7D4F; --danger:#B8471F;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:'Sarabun','Noto Sans Thai','Leelawadee UI',Tahoma,-apple-system,'Segoe UI',sans-serif;
+    font-size:16px; line-height:1.6; padding:24px 16px 60px;
+  }
+  .wrap{max-width:520px; margin:0 auto;}
+  .crest-row{display:flex; align-items:center; gap:12px; margin-bottom:6px;}
+  .crest{width:44px; height:44px; border-radius:50%; background:linear-gradient(160deg,var(--maroon),var(--maroon-deep)); display:flex; align-items:center; justify-content:center; color:var(--gold); font-weight:700; border:2px solid var(--gold); flex:none;}
+  h1{font-size:1.25rem; margin:0;}
+  .sub{color:var(--muted); font-size:.88rem; margin:4px 0 20px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:.86rem; font-weight:600; margin-bottom:6px;}
+  input[type="text"], input[type="tel"]{
+    width:100%; padding:11px 12px; font-size:1rem; font-family:inherit;
+    background:var(--input-bg); color:var(--ink); border:1.5px solid var(--line); border-radius:9px;
+  }
+  .btn{width:100%; padding:12px; font-size:.98rem; font-weight:700; font-family:inherit; color:#fff; background:var(--maroon); border:none; border-radius:9px; cursor:pointer; margin-top:6px;}
+  .btn:disabled{background:var(--line); color:var(--muted); cursor:not-allowed;}
+  .err{color:var(--danger); font-weight:600; font-size:.9rem; margin-top:14px; display:none;}
+  .results{margin-top:22px; display:flex; flex-direction:column; gap:14px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px;}
+  .card .who{font-weight:700; font-size:1rem; margin-bottom:2px;}
+  .card .cat{color:var(--muted); font-size:.82rem; margin-bottom:10px;}
+  .status-badge{display:inline-block; background:var(--maroon); color:#fff; font-weight:700; font-size:.86rem; padding:8px 12px; border-radius:10px; margin-bottom:10px;}
+  .items{font-size:.86rem; color:var(--ink);}
+  .items div{padding:3px 0; border-top:1px dashed var(--line);}
+  .items div:first-child{border-top:none;}
+  .ship{font-size:.8rem; color:var(--muted); margin-top:8px;}
+</style>
+
+<div class="wrap">
+  <div class="crest-row">
+    <div class="crest">TU</div>
+    <div><h1>เช็คสถานะคำสั่งซื้อ</h1></div>
+  </div>
+  <p class="sub">Thammasat Basketball Alumni 2026 — กรอกชื่อและเบอร์โทรที่ใช้ตอนสั่งซื้อ เพื่อดูสถานะและรายการที่สั่ง</p>
+
+  <div class="field"><label for="f-name">ชื่อ-นามสกุล (ผู้สั่งซื้อ)</label><input type="text" id="f-name"></div>
+  <div class="field"><label for="f-phone">เบอร์โทรศัพท์มือถือ</label><input type="tel" id="f-phone" inputmode="numeric" placeholder="08x-xxx-xxxx"></div>
+  <button class="btn" id="btn-search">ค้นหาคำสั่งซื้อ</button>
+  <p class="err" id="err"></p>
+
+  <div class="results" id="results"></div>
+</div>
+
+<script>
+(function(){
+  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxwVUZUUNgz3xuwcdCQiCekAdiERjYh55q3bBAoukHKwnIsO4-FfPmtzanRi6uNM-8G/exec';
+
+  function $(s){ return document.querySelector(s); }
+
+  function statusMessage(status, shipMethod){
+    var isPickup = shipMethod === 'รับเองที่โรงยิมท่าพระจันทร์';
+    switch(status){
+      case 'รอสรุปยอดสั่งซื้อ':
+      case 'สรุปยอดสั่งซื้อ':
+        return 'คำสั่งซื้ออยู่ระหว่างรวบรวมยอด ยังไม่เริ่มผลิต';
+      case 'อยู่ในขั้นตอนการผลิต':
+        return 'ชุดกำลังผลิตอยู่ รอแจ้งอีกครั้งเมื่อผลิตเสร็จ';
+      case 'ผลิตเสร็จแล้ว รอการจัดส่ง':
+        return 'ผลิตเสร็จแล้ว กำลังเตรียมนำส่ง';
+      case 'จัดส่งแล้ว':
+        return isPickup
+          ? 'ชุดถูกส่งมาที่โรงยิมแล้ว กรุณารอวันนัดเพื่อรับที่โรงยิมท่าพระจันทร์'
+          : 'จัดส่งออกแล้ว รอรับได้ตามที่อยู่ที่ท่านระบุไว้';
+      case 'พร้อมให้มารับที่โรงยิม':
+        return 'ชุดมาถึงแล้ว มารับได้เลยที่โรงยิมท่าพระจันทร์';
+      case 'รับชุดแล้ว':
+        return 'รับชุดเรียบร้อยแล้ว ขอบคุณที่สั่งซื้อ';
+      default:
+        return status || 'ยังไม่มีข้อมูลสถานะ';
+    }
+  }
+
+  function itemLines(r){
+    var lines = [];
+    if(r.tank.on) lines.push('เสื้อกล้าม ไซส์ '+(r.tank.size||'-'));
+    if(r.short.on) lines.push('เสื้อแขนสั้น ไซส์ '+(r.short.size||'-'));
+    if(r.shorts.on) lines.push('กางเกง ไซส์ '+(r.shorts.size||'-'));
+    return lines;
+  }
+
+  function renderResults(results){
+    var el = $('#results');
+    el.innerHTML = results.map(function(r){
+      var who = r.label ? r.label : 'รายการของคุณ';
+      var items = itemLines(r).map(function(l){ return '<div>'+l+'</div>'; }).join('');
+      return '<div class="card">'+
+        '<div class="who">'+who+'</div>'+
+        (r.category ? '<div class="cat">รุ่น: '+r.category+'</div>' : '')+
+        '<div class="status-badge">'+statusMessage(r.status, r.shipMethod)+'</div>'+
+        '<div class="items">'+(items || '<div>—</div>')+'</div>'+
+        '<div class="ship">วิธีจัดส่ง: '+(r.shipMethod||'—')+'</div>'+
+      '</div>';
+    }).join('');
+  }
+
+  function showErr(msg){
+    var e = $('#err');
+    e.textContent = msg;
+    e.style.display = msg ? 'block' : 'none';
+  }
+
+  $('#btn-search').addEventListener('click', function(){
+    var name = $('#f-name').value.trim();
+    var phone = $('#f-phone').value.trim();
+    showErr('');
+    $('#results').innerHTML = '';
+    if(!name || !phone){ showErr('กรุณากรอกชื่อและเบอร์โทร'); return; }
+
+    var btn = $('#btn-search');
+    btn.disabled = true; btn.textContent = 'กำลังค้นหา...';
+
+    var url = APPS_SCRIPT_URL + '?name=' + encodeURIComponent(name) + '&phone=' + encodeURIComponent(phone);
+    fetch(url).then(function(res){ return res.json(); }).then(function(data){
+      btn.disabled = false; btn.textContent = 'ค้นหาคำสั่งซื้อ';
+      if(!data.ok){ showErr(data.error || 'ไม่พบคำสั่งซื้อ'); return; }
+      renderResults(data.results);
+    }).catch(function(err){
+      btn.disabled = false; btn.textContent = 'ค้นหาคำสั่งซื้อ';
+      showErr('ค้นหาไม่สำเร็จ: ' + err.message);
+    });
+  });
+})();
+</script>

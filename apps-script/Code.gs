@@ -1,6 +1,10 @@
 // TU Basketball Alumni Pre-Order — backend
 // วางโค้ดนี้ใน Extensions > Apps Script ของ Google Sheet "2026 Pre-Order Uniform TU Bas"
 // แล้ว Deploy เป็น Web App (ดูขั้นตอนละเอียดใน README.md)
+//
+// ก่อนใช้หน้าแอดมิน (checkin.html) ต้องรัน setAdminToken() ครั้งเดียวจาก editor ก่อน (ดูคอมเมนต์
+// ตรงฟังก์ชันนั้น) — ห้ามเอา token ไปเขียนเป็นค่าคงที่ในไฟล์นี้เด็ดขาด เพราะไฟล์นี้ถูก commit ขึ้น
+// GitHub repo สาธารณะด้วย ถ้าเขียน token ไว้ตรงนี้จะเท่ากับเปิดเผยให้ทุกคนเห็น
 
 var SHEET_ID = '19Qa__VEKV71ZRMMFoa_3MUPPgogUjIMAmkdn-RD5ZpY';
 var SHEET_NAME = 'Orders';
@@ -15,12 +19,21 @@ var HEADERS = [
   'สั่งกางเกง', 'ไซส์กางเกง', 'ไม่รับกางเกง (ยืนยันแล้ว)',
   'หมายเหตุ',
   'วิธีจัดส่ง', 'ผู้รับ(จัดส่ง)', 'ที่อยู่จัดส่ง', 'เบอร์โทร(จัดส่ง)',
-  'ค่าจัดส่ง (บาท)', 'ยอดรวมออเดอร์ (บาท)', 'ยอดแจ้งการโอน (บาท)', 'ลิงก์สลิปการโอนเงิน'
+  'ค่าจัดส่ง (บาท)', 'ยอดรวมออเดอร์ (บาท)', 'ยอดแจ้งการโอน (บาท)', 'ลิงก์สลิปการโอนเงิน',
+  'สถานะ'
 ];
 // 'ค่าจัดส่ง' และยอดรวมของบรรทัดแรกในแต่ละ OrderID เท่านั้นที่รวมค่าส่ง —
 // บรรทัดอื่นของ OrderID เดียวกันจะโชว์แค่ยอดของรายการนั้นเอง กัน sum ทั้งคอลัมน์ผิดจากยอดซ้ำ
 // 'ยอดแจ้งการโอน' = ยอดรวมทั้งออเดอร์ (ทุกคนในออเดอร์นี้ + ค่าส่ง) ใส่ไว้แถวแรกของ OrderID
 // เท่านั้น แถวอื่นเป็น 0 — ไว้เทียบกับสลิปตรง ๆ โดยไม่ต้องบวกเลขเอง
+
+// เส้นทางสถานะ — 4 ขั้นแรกใช้ร่วมกันทุกคน จากนั้นแยกตามวิธีจัดส่ง:
+//   รอสรุปยอดสั่งซื้อ → สรุปยอดสั่งซื้อ → อยู่ในขั้นตอนการผลิต → ผลิตเสร็จแล้ว รอการจัดส่ง → จัดส่งแล้ว
+//     ├─ (จัดส่งที่บ้าน) จบที่ "จัดส่งแล้ว" ให้ขนส่งจัดการต่อ
+//     └─ (รับเอง)      → พร้อมให้มารับที่โรงยิม → รับชุดแล้ว (ติ๊กทีละคนตอนมารับจริงผ่านหน้าแอดมิน)
+var STATUS_DEFAULT = 'รอสรุปยอดสั่งซื้อ';
+var SHIP_LABEL_PICKUP = 'รับเองที่โรงยิมท่าพระจันทร์';
+var SHIP_LABEL_DELIVERY = 'จัดส่งที่บ้าน';
 
 // ราคา/เกณฑ์ค่าส่งปัจจุบัน — ใช้ทั้งตอนคำนวณยอดใหม่ (backfillOrderTotals) และต้องตรงกับค่าใน index.html
 var PRICE_PIECE = 350;
@@ -48,9 +61,11 @@ function getSheet_() {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(HEADERS);
     sheet.setFrozenRows(1);
+    ensurePhoneColumnsAreText_(sheet);
     return sheet;
   }
   migrateHeaders_(sheet);
+  ensurePhoneColumnsAreText_(sheet);
   return sheet;
 }
 
@@ -74,10 +89,27 @@ function migrateHeaders_(sheet) {
       // คอลัมน์อื่น ให้แจ้ง error แทนเพื่อให้เข้ามาแก้เรียงคอลัมน์เองก่อน
       throw new Error('คอลัมน์ "' + name + '" อยู่ตำแหน่งที่ ' + (pos + 1) + ' แต่ควรอยู่ที่ ' + (wantIdx + 1) + ' — เรียงคอลัมน์ใน Sheet ให้ตรงกับ HEADERS ก่อน แล้วค่อยรันใหม่');
     }
-    // ยังไม่เคยมีคอลัมน์นี้เลย — แทรกคอลัมน์ใหม่จริง ๆ ที่ตำแหน่งนี้ (ข้อมูลเดิมเลื่อนขวาอัตโนมัติ)
-    sheet.insertColumnBefore(wantIdx + 1);
+    // ยังไม่เคยมีคอลัมน์นี้เลย
+    if (wantIdx < current.length) {
+      // แทรกกลางตาราง — ต้องแทรกคอลัมน์จริง ๆ ที่ตำแหน่งนี้ (ข้อมูลเดิมเลื่อนขวาอัตโนมัติ)
+      sheet.insertColumnBefore(wantIdx + 1);
+    }
+    // ถ้า wantIdx >= current.length คือต่อท้ายตารางพอดี เขียนค่าลงคอลัมน์ใหม่ต่อท้ายได้เลย
+    // ไม่ต้อง insertColumnBefore (ตำแหน่งนั้นยังไม่มีคอลัมน์อยู่เลย จะ error) ไม่มีอะไรให้เลื่อนอยู่แล้ว
     sheet.getRange(1, wantIdx + 1).setValue(name);
     current.splice(wantIdx, 0, name);
+  });
+}
+
+// ตั้งฟอร์แมตคอลัมน์เบอร์โทรเป็น Plain text กันไม่ให้ Sheets ตัดเลข 0 นำหน้าทิ้งเวลาบันทึกค่าใหม่
+// (แก้ปัญหาระยะยาว — ของเก่าที่เพี้ยนไปแล้วต้องใช้ repairPhoneLeadingZeros() ซ่อมแยกต่างหาก)
+function ensurePhoneColumnsAreText_(sheet) {
+  var lastCol = sheet.getLastColumn();
+  var headerVals = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  ['เบอร์โทร', 'เบอร์โทร(จัดส่ง)'].forEach(function (name) {
+    var idx = headerVals.indexOf(name);
+    if (idx === -1) return;
+    sheet.getRange(1, idx + 1, sheet.getMaxRows(), 1).setNumberFormat('@STRING@');
   });
 }
 
@@ -90,58 +122,65 @@ function getSlipFolder_() {
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
-
-    if (!data.name || !data.phone) {
-      return jsonOut_({ ok: false, error: 'ไม่มีชื่อหรือเบอร์โทรผู้สั่งซื้อ' });
+    if (data.action === 'markReceived') {
+      return jsonOut_(markReceived_(data));
     }
-    if (!data.entries || data.entries.length === 0) {
-      return jsonOut_({ ok: false, error: 'ไม่มีรายการชุดที่สั่ง' });
-    }
-    if (!data.slipBase64) {
-      return jsonOut_({ ok: false, error: 'ไม่พบไฟล์สลิปการโอนเงิน — ต้องแนบสลิปก่อนถึงจะบันทึกคำสั่งซื้อได้' });
-    }
-
-    var now = new Date();
-    var orderId = 'TU-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyMMdd-HHmmss');
-
-    // แนบไฟล์สลิปไปที่ Google Drive (ครั้งเดียวต่อออเดอร์ ใช้ลิงก์เดียวกันทุกแถว)
-    var blob = Utilities.newBlob(
-      Utilities.base64Decode(data.slipBase64),
-      data.slipMime || 'application/octet-stream',
-      orderId + '_' + (data.slipFileName || 'slip')
-    );
-    var slipUrl = getSlipFolder_().createFile(blob).getUrl();
-
-    var sheet = getSheet_();
-    var shipLabel = data.shipMethod === 'pickup' ? 'รับเองที่โรงยิมท่าพระจันทร์' : 'จัดส่งที่บ้าน';
-
-    var shipFee = data.shipFee || 0;
-    data.entries.forEach(function (en, idx) {
-      var tank = en.tank || {};
-      var short = en.short || {};
-      var shorts = en.shorts || {};
-      var isFirstRow = idx === 0;
-      var rowShipFee = isFirstRow ? shipFee : '';
-      var rowTotal = (en.entryTotal || 0) + (isFirstRow ? shipFee : 0);
-      var transferAmount = isFirstRow ? (data.total || 0) : 0;
-      var rowSlipUrl = isFirstRow ? slipUrl : '';
-      sheet.appendRow([
-        now, orderId,
-        data.name, data.phone, data.line || '',
-        en.label || '', en.category || '',
-        tank.checked ? 'ใช่' : 'ไม่', tank.size || '', tank.printName || '', tank.printNum || '',
-        short.checked ? 'ใช่' : 'ไม่', short.size || '', short.printName || '', short.printNum || '',
-        shorts.checked ? 'ใช่' : 'ไม่', shorts.size || '', (!shorts.checked && en.shortsSkip) ? 'ใช่' : '',
-        en.note || '',
-        shipLabel, data.sName || '', data.sAddr || '', data.sPhone || '',
-        rowShipFee, rowTotal, transferAmount, rowSlipUrl
-      ]);
-    });
-
-    return jsonOut_({ ok: true, orderId: orderId });
+    return jsonOut_(createOrder_(data));
   } catch (err) {
     return jsonOut_({ ok: false, error: err.message });
   }
+}
+
+function createOrder_(data) {
+  if (!data.name || !data.phone) {
+    return { ok: false, error: 'ไม่มีชื่อหรือเบอร์โทรผู้สั่งซื้อ' };
+  }
+  if (!data.entries || data.entries.length === 0) {
+    return { ok: false, error: 'ไม่มีรายการชุดที่สั่ง' };
+  }
+  if (!data.slipBase64) {
+    return { ok: false, error: 'ไม่พบไฟล์สลิปการโอนเงิน — ต้องแนบสลิปก่อนถึงจะบันทึกคำสั่งซื้อได้' };
+  }
+
+  var now = new Date();
+  var orderId = 'TU-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyMMdd-HHmmss');
+
+  // แนบไฟล์สลิปไปที่ Google Drive (ครั้งเดียวต่อออเดอร์ ใช้ลิงก์เดียวกันทุกแถว)
+  var blob = Utilities.newBlob(
+    Utilities.base64Decode(data.slipBase64),
+    data.slipMime || 'application/octet-stream',
+    orderId + '_' + (data.slipFileName || 'slip')
+  );
+  var slipUrl = getSlipFolder_().createFile(blob).getUrl();
+
+  var sheet = getSheet_();
+  var shipLabel = data.shipMethod === 'pickup' ? SHIP_LABEL_PICKUP : SHIP_LABEL_DELIVERY;
+
+  var shipFee = data.shipFee || 0;
+  data.entries.forEach(function (en, idx) {
+    var tank = en.tank || {};
+    var short = en.short || {};
+    var shorts = en.shorts || {};
+    var isFirstRow = idx === 0;
+    var rowShipFee = isFirstRow ? shipFee : '';
+    var rowTotal = (en.entryTotal || 0) + (isFirstRow ? shipFee : 0);
+    var transferAmount = isFirstRow ? (data.total || 0) : 0;
+    var rowSlipUrl = isFirstRow ? slipUrl : '';
+    sheet.appendRow([
+      now, orderId,
+      data.name, "'" + data.phone, data.line || '',
+      en.label || '', en.category || '',
+      tank.checked ? 'ใช่' : 'ไม่', tank.size || '', tank.printName || '', tank.printNum || '',
+      short.checked ? 'ใช่' : 'ไม่', short.size || '', short.printName || '', short.printNum || '',
+      shorts.checked ? 'ใช่' : 'ไม่', shorts.size || '', (!shorts.checked && en.shortsSkip) ? 'ใช่' : '',
+      en.note || '',
+      shipLabel, data.sName || '', data.sAddr || '', data.sPhone ? ("'" + data.sPhone) : '',
+      rowShipFee, rowTotal, transferAmount, rowSlipUrl,
+      STATUS_DEFAULT
+    ]);
+  });
+
+  return { ok: true, orderId: orderId };
 }
 
 function jsonOut_(obj) {
@@ -242,7 +281,7 @@ function backfillOrderTotals() {
     var pieces = (tankOn ? 1 : 0) + (shortOn ? 1 : 0) + (shortsOn ? 1 : 0);
     orderPieces[oid] = (orderPieces[oid] || 0) + pieces;
     orderItemSum[oid] = (orderItemSum[oid] || 0) + cost;
-    if (row[C_SHIP_METHOD] === 'จัดส่งที่บ้าน') orderIsDelivery[oid] = true;
+    if (row[C_SHIP_METHOD] === SHIP_LABEL_DELIVERY) orderIsDelivery[oid] = true;
   });
 
   // pass 2: เขียนค่าจัดส่ง + ยอดรวมออเดอร์ของแต่ละแถว + ยอดแจ้งการโอน (รวมทั้งออเดอร์ เฉพาะแถวแรก)
@@ -269,4 +308,261 @@ function backfillOrderTotals() {
   var grandTotal = values.reduce(function (s, row) { return s + (Number(row[C_TOTAL]) || 0); }, 0);
   Logger.log('แก้แล้ว ' + values.length + ' แถว (' + orderCount + ' ออเดอร์, ข้าม ' + skipped + ' แถวที่ไม่มี OrderID)');
   Logger.log('ยอดรวมทั้งหมดหลัง backfill = ' + grandTotal + ' บาท — เอาไปเทียบกับยอดโอนจริงได้');
+}
+
+// ============================================================
+// เบอร์โทร — ซ่อมเลข 0 นำหน้าที่หายไปจากของเก่า (ครั้งเดียว)
+// ============================================================
+//
+// รันครั้งเดียวจาก editor (เลือก repairPhoneLeadingZeros แล้ว Run) ซ่อมเฉพาะเซลล์ที่ "มั่นใจ 100%"
+// ว่าเป็นเบอร์ไทยที่โดนตัดเลข 0 หน้าไป (ต้องเป็นตัวเลขล้วน ยาวพอดี 9 หลัก) เท่านั้น — เคสไหนที่ไม่
+// ชัวร์ (ว่าง, ความยาวอื่น, มีตัวอักษรปน) จะข้ามไว้ไม่แตะ แล้ว log แถวที่ข้ามให้เช็คเองทีหลัง
+function repairPhoneLeadingZeros() {
+  var sheet = getSheet_(); // เผื่อฟอร์แมตคอลัมน์เป็น plain text ให้ด้วยในตัว
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) { Logger.log('ไม่มีแถวข้อมูล'); return; }
+
+  var lastCol = sheet.getLastColumn();
+  var headerVals = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var targets = ['เบอร์โทร', 'เบอร์โทร(จัดส่ง)'];
+  var totalFixed = 0, totalSkipped = 0;
+
+  targets.forEach(function (colName) {
+    var idx = headerVals.indexOf(colName);
+    if (idx === -1) { Logger.log('ไม่พบคอลัมน์ "' + colName + '"'); return; }
+    var range = sheet.getRange(2, idx + 1, lastRow - 1, 1);
+    var values = range.getValues();
+    var fixed = 0, skipped = 0;
+
+    values.forEach(function (r, i) {
+      var v = r[0];
+      if (v === '' || v === null) return; // ว่าง ไม่ต้องแตะ
+      if (typeof v === 'number') {
+        var s = String(v);
+        if (s.length === 9) {
+          values[i][0] = "'0" + s; // นำหน้าด้วย ' บังคับให้เก็บเป็นข้อความ
+          fixed++;
+        } else {
+          skipped++;
+          Logger.log('ข้าม ' + colName + ' แถว ' + (i + 2) + ' — เป็นตัวเลข ' + s.length + ' หลัก (ค่า: ' + s + ') ไม่ใช่ 9 หลัก เช็คเอง');
+        }
+      } else if (typeof v === 'string' && /^[0-9]{9}$/.test(v)) {
+        values[i][0] = "'0" + v;
+        fixed++;
+      }
+      // string ที่ขึ้นต้นด้วย 0 อยู่แล้ว หรือความยาว/รูปแบบอื่น ๆ ไม่แตะเลย
+    });
+
+    range.setValues(values);
+    totalFixed += fixed;
+    totalSkipped += skipped;
+  });
+
+  Logger.log('ซ่อมเบอร์โทรสำเร็จ ' + totalFixed + ' เซลล์ • ข้าม/ไม่แน่ใจ ' + totalSkipped + ' เซลล์ (ดู log ด้านบนว่าข้ามแถวไหนบ้าง)');
+}
+
+// ============================================================
+// สถานะออเดอร์ — อัปเดตทีเดียวทั้งหมด
+// ============================================================
+
+function setStatusForAll_(newStatus, shipLabelFilter) {
+  var sheet = getSheet_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) { Logger.log('ไม่มีแถวข้อมูล'); return; }
+
+  var lastCol = sheet.getLastColumn();
+  var headerVals = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var C_ORDERID = headerVals.indexOf('OrderID');
+  var C_STATUS = headerVals.indexOf('สถานะ');
+  var C_SHIP_METHOD = headerVals.indexOf('วิธีจัดส่ง');
+  if (C_STATUS === -1) throw new Error('ไม่พบคอลัมน์ "สถานะ" — เปิดชีตหรือรัน setupHeaders() ก่อนเพื่อให้ migrate header อัตโนมัติ');
+
+  var range = sheet.getRange(2, 1, lastRow - 1, lastCol);
+  var values = range.getValues();
+  var count = 0;
+  values.forEach(function (row) {
+    if (!row[C_ORDERID]) return; // แถวว่าง ข้าม
+    if (shipLabelFilter && row[C_SHIP_METHOD] !== shipLabelFilter) return;
+    row[C_STATUS] = newStatus;
+    count++;
+  });
+  range.setValues(values);
+  Logger.log('อัปเดตสถานะเป็น "' + newStatus + '" ให้ ' + count + ' แถว' + (shipLabelFilter ? ' (เฉพาะ "' + shipLabelFilter + '")' : ' (ทุกแถว)'));
+}
+
+// เลือกฟังก์ชันด้านล่างจาก dropdown ใน Apps Script editor (หรือจากเมนู "สถานะออเดอร์" ในชีตเลย)
+// แล้วกด Run ตามลำดับขั้นตอนจริงของงาน
+function markOrderSummarized() { setStatusForAll_('สรุปยอดสั่งซื้อ', null); }
+function markInProduction() { setStatusForAll_('อยู่ในขั้นตอนการผลิต', null); }
+function markProducedAwaitingShip() { setStatusForAll_('ผลิตเสร็จแล้ว รอการจัดส่ง', null); }
+function markShipped() { setStatusForAll_('จัดส่งแล้ว', null); }
+function markReadyForPickup() { setStatusForAll_('พร้อมให้มารับที่โรงยิม', SHIP_LABEL_PICKUP); }
+
+// เมนูลัดในตัว Google Sheet เอง (ไม่ต้องเปิด Apps Script editor ทุกครั้ง) — โผล่อัตโนมัติทุกครั้งที่
+// เปิดไฟล์ชีตนี้
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('สถานะออเดอร์')
+    .addItem('1. สรุปยอดสั่งซื้อ', 'markOrderSummarized')
+    .addItem('2. อยู่ในขั้นตอนการผลิต', 'markInProduction')
+    .addItem('3. ผลิตเสร็จแล้ว รอการจัดส่ง', 'markProducedAwaitingShip')
+    .addItem('4. จัดส่งแล้ว', 'markShipped')
+    .addItem('5. พร้อมให้มารับที่โรงยิม (เฉพาะกลุ่มรับเอง)', 'markReadyForPickup')
+    .addSeparator()
+    .addItem('ซ่อมเบอร์โทรเลข 0 หาย (ครั้งเดียว)', 'repairPhoneLeadingZeros')
+    .addItem('ตั้ง/ดูรหัสเข้าหน้าแอดมิน (ครั้งเดียว)', 'setAdminToken')
+    .addToUi();
+}
+
+// ============================================================
+// Admin token — ใช้ป้องกันหน้า checkin.html (เช็คชื่อรับของ) ไม่ให้คนทั่วไปเข้าไปแก้ข้อมูลได้
+// ============================================================
+//
+// รันฟังก์ชันนี้ "ครั้งเดียว" จาก editor (เลือก setAdminToken แล้ว Run) จะสุ่มรหัสลับให้ แล้วเก็บไว้ใน
+// Script Properties (พื้นที่เก็บค่าลับของ Apps Script โปรเจกต์นี้เท่านั้น "ไม่ถูก commit ขึ้น GitHub"
+// ต่างจากโค้ดในไฟล์นี้ที่ public) — ดู token ที่สุ่มได้จาก View > Logs (Ctrl+Enter) หลังรันเสร็จ
+// เอา token นั้นไปต่อท้ายลิงก์ checkin.html?token=xxxxx แล้วเก็บลิงก์นี้ไว้ที่ตัวเองที่เดียว ห้ามโพสต์
+// สาธารณะ — รันซ้ำเมื่อไหร่ก็ได้ถ้าอยากเปลี่ยนรหัสใหม่ (รหัสเก่าจะใช้ไม่ได้ทันที)
+function setAdminToken() {
+  var token = Utilities.getUuid();
+  PropertiesService.getScriptProperties().setProperty('ADMIN_TOKEN', token);
+  Logger.log('ตั้งรหัสแอดมินใหม่แล้ว: ' + token);
+  Logger.log('เอาไปต่อท้ายลิงก์: checkin.html?token=' + token);
+  Logger.log('เก็บลิงก์นี้ไว้ที่เดียว ห้ามโพสต์ที่สาธารณะ (ใครมีลิงก์นี้แก้ไขสถานะออเดอร์ได้)');
+}
+
+function getAdminToken_() {
+  var token = PropertiesService.getScriptProperties().getProperty('ADMIN_TOKEN');
+  if (!token) throw new Error('ยังไม่ได้ตั้งรหัสแอดมิน — รัน setAdminToken() จาก Apps Script editor ก่อนครั้งเดียว');
+  return token;
+}
+
+function requireAdminToken_(params) {
+  var token = getAdminToken_();
+  if (!params.token || params.token !== token) {
+    throw new Error('ไม่มีสิทธิ์เข้าถึง (รหัสไม่ถูกต้องหรือไม่ได้ใส่มา)');
+  }
+}
+
+// ============================================================
+// ค้นหาออเดอร์ — ใช้ทั้งหน้าลูกค้าเช็คสถานะเอง (status.html) และหน้าแอดมิน (checkin.html)
+// ============================================================
+
+function doGet(e) {
+  try {
+    var params = e.parameter || {};
+    if (params.mode === 'admin') {
+      return jsonOut_(adminSearch_(params));
+    }
+    return jsonOut_(customerSearch_(params));
+  } catch (err) {
+    return jsonOut_({ ok: false, error: err.message });
+  }
+}
+
+function readSheetRows_(sheet) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { headerVals: [], rows: [] };
+  var lastCol = sheet.getLastColumn();
+  var headerVals = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var rows = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  return { headerVals: headerVals, rows: rows };
+}
+
+function rowToResult_(headerVals, row, rowNumber) {
+  function get(name) { var i = headerVals.indexOf(name); return i === -1 ? '' : row[i]; }
+  return {
+    row: rowNumber,
+    orderId: get('OrderID'),
+    name: get('ชื่อผู้สั่งซื้อ'),
+    phone: String(get('เบอร์โทร')),
+    label: get('สำหรับ'),
+    category: get('รุ่นนักกีฬาที่ลงแข่ง'),
+    tank: { on: get('สั่งเสื้อกล้าม') === 'ใช่', size: get('ไซส์เสื้อกล้าม') },
+    short: { on: get('สั่งเสื้อแขนสั้น') === 'ใช่', size: get('ไซส์เสื้อแขนสั้น') },
+    shorts: { on: get('สั่งกางเกง') === 'ใช่', size: get('ไซส์กางเกง') },
+    shipMethod: get('วิธีจัดส่ง'),
+    status: get('สถานะ') || STATUS_DEFAULT
+  };
+}
+
+// หน้าลูกค้า (status.html) — ต้องใส่ชื่อ+เบอร์ตรงกันเป๊ะทั้งคู่ ไม่ต้อง token เพราะเป็นการดูข้อมูล
+// ของตัวเอง (คล้ายระบบเช็คสถานะพัสดุทั่วไปที่ใช้เบอร์โทรเป็นกุญแจ)
+function customerSearch_(params) {
+  var name = String(params.name || '').trim();
+  var phone = String(params.phone || '').trim();
+  if (!name || !phone) return { ok: false, error: 'กรุณากรอกชื่อและเบอร์โทร' };
+
+  var sheet = getSheet_();
+  var data = readSheetRows_(sheet);
+  var iName = data.headerVals.indexOf('ชื่อผู้สั่งซื้อ');
+  var iPhone = data.headerVals.indexOf('เบอร์โทร');
+
+  var results = [];
+  data.rows.forEach(function (row, i) {
+    var rName = String(row[iName] || '').trim();
+    var rPhone = String(row[iPhone] || '').trim();
+    if (rName === name && rPhone === phone) {
+      results.push(rowToResult_(data.headerVals, row, i + 2));
+    }
+  });
+  if (!results.length) return { ok: false, error: 'ไม่พบคำสั่งซื้อที่ตรงกับชื่อและเบอร์โทรนี้' };
+  return { ok: true, results: results };
+}
+
+// หน้าแอดมิน (checkin.html) — ต้องใส่ token ที่ถูกต้อง ค้นหลวมกว่า (ชื่อ/เบอร์บางส่วน + กรองรุ่นได้)
+// เพื่อให้เจอคนที่มาต่อคิวได้เร็วแม้จำข้อมูลไม่ครบ
+function adminSearch_(params) {
+  requireAdminToken_(params);
+  var q = String(params.q || '').trim().toLowerCase();
+  var category = String(params.category || '').trim();
+
+  var sheet = getSheet_();
+  var data = readSheetRows_(sheet);
+  var iOrderId = data.headerVals.indexOf('OrderID');
+  var iName = data.headerVals.indexOf('ชื่อผู้สั่งซื้อ');
+  var iPhone = data.headerVals.indexOf('เบอร์โทร');
+  var iLabel = data.headerVals.indexOf('สำหรับ');
+  var iCategory = data.headerVals.indexOf('รุ่นนักกีฬาที่ลงแข่ง');
+
+  var results = [];
+  data.rows.forEach(function (row, i) {
+    if (!row[iOrderId]) return;
+    if (category && String(row[iCategory] || '') !== category) return;
+    if (q) {
+      var hay = (String(row[iName] || '') + ' ' + String(row[iPhone] || '') + ' ' + String(row[iLabel] || '')).toLowerCase();
+      if (hay.indexOf(q) === -1) return;
+    }
+    results.push(rowToResult_(data.headerVals, row, i + 2));
+  });
+  return { ok: true, results: results };
+}
+
+// ============================================================
+// ติ๊กว่ามารับชุดแล้ว — เรียกจากหน้าแอดมิน (checkin.html) ผ่าน doPost action: 'markReceived'
+// ============================================================
+
+function markReceived_(data) {
+  requireAdminToken_(data);
+  var rowNums = data.rows;
+  if (!rowNums || !rowNums.length) return { ok: false, error: 'ไม่มีแถวที่เลือก' };
+
+  var sheet = getSheet_();
+  var lastCol = sheet.getLastColumn();
+  var lastRow = sheet.getLastRow();
+  var headerVals = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var C_STATUS = headerVals.indexOf('สถานะ');
+  var C_SHIP_METHOD = headerVals.indexOf('วิธีจัดส่ง');
+  if (C_STATUS === -1) return { ok: false, error: 'ไม่พบคอลัมน์สถานะ' };
+
+  var updated = [], skipped = [];
+  rowNums.forEach(function (rn) {
+    var rowNum = Number(rn);
+    if (!rowNum || rowNum < 2 || rowNum > lastRow) { skipped.push(rn); return; }
+    var shipVal = sheet.getRange(rowNum, C_SHIP_METHOD + 1).getValue();
+    if (shipVal !== SHIP_LABEL_PICKUP) { skipped.push(rowNum); return; } // กันเผลอไปแก้แถวจัดส่ง
+    sheet.getRange(rowNum, C_STATUS + 1).setValue('รับชุดแล้ว');
+    updated.push(rowNum);
+  });
+  return { ok: true, updated: updated, skipped: skipped };
 }
