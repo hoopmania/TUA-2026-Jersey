@@ -596,8 +596,9 @@ function reportData_(params) {
     if (!orders[oid]) {
       var ts = row[iTs];
       var dateStr = ts ? Utilities.formatDate(new Date(ts), 'Asia/Bangkok', 'yyyy-MM-dd') : 'ไม่ทราบวันที่';
+      var timeStr = ts ? Utilities.formatDate(new Date(ts), 'Asia/Bangkok', 'HH:mm') : '';
       orders[oid] = {
-        orderId: oid, date: dateStr,
+        orderId: oid, date: dateStr, time: timeStr,
         name: row[iName], label: row[iLabel], shipMethod: row[iShip],
         amount: Number(row[iTransfer]) || 0, pieces: 0
       };

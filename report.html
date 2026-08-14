@@ -63,9 +63,12 @@
   th{color:var(--muted); font-weight:700; font-size:.78rem;}
   td.num, th.num{text-align:right;}
   .tablewrap{overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:4px 12px;}
+  tr.foot td{border-top:2px solid var(--line); border-bottom:none; font-weight:700;}
   .empty{color:var(--muted); font-size:.88rem; text-align:center; padding:20px 0;}
   .msg{font-size:.84rem; font-weight:600; margin:10px 0; padding:10px 12px; border-radius:9px; background:rgba(184,71,31,.12); color:var(--danger);}
-  h2{font-size:1rem; margin:22px 0 10px;}
+  .msg.ok{background:rgba(47,125,79,.12); color:var(--success);}
+  h2{font-size:1rem; margin:22px 0 10px; display:flex; justify-content:space-between; align-items:center; gap:8px;}
+  .btn-copy{padding:7px 12px; font-size:.78rem; font-weight:700; font-family:inherit; color:var(--maroon); background:transparent; border:1.5px solid var(--line); border-radius:8px; cursor:pointer; white-space:nowrap;}
 </style>
 
 <div class="wrap" id="app">
@@ -110,6 +113,18 @@
       var m = months[Number(parts[1]) - 1];
       var d = Number(parts[2]);
       return d + ' ' + m + ' ' + y;
+    }
+
+    function thShortDate(dstr){
+      if(!dstr || dstr === 'ไม่ทราบวันที่') return dstr;
+      var parts = dstr.split('-');
+      var yy = (Number(parts[0]) + 543) % 100;
+      return parts[2] + '/' + parts[1] + '/' + (yy < 10 ? '0' + yy : yy);
+    }
+
+    function ordersForDay(dateStr){
+      return report.orders.filter(function(o){ return o.date === dateStr; })
+        .sort(function(a,b){ return a.time < b.time ? -1 : (a.time > b.time ? 1 : 0); });
     }
 
     function showMsg(text){
@@ -158,7 +173,7 @@
 
     function renderOneDay(dateStr){
       var day = report.days.find(function(d){ return d.date === dateStr; });
-      var orders = report.orders.filter(function(o){ return o.date === dateStr; });
+      var orders = ordersForDay(dateStr);
       var summary = '<div class="daycard">' +
         '<div><div class="d-date">' + esc(thDate(dateStr)) + '</div>' +
         '<div class="d-meta">' + (day ? day.orderCount : 0) + ' ออเดอร์ • ' + (day ? day.pieces : 0) + ' ชิ้น</div></div>' +
@@ -166,17 +181,49 @@
 
       var rows = orders.map(function(o){
         var who = o.label ? (o.name + ' (' + o.label + ')') : o.name;
-        return '<tr><td>' + esc(who) + '</td>' +
+        return '<tr><td>' + esc(o.time) + '</td><td>' + esc(who) + '</td>' +
           '<td>' + esc(o.shipMethod) + '</td>' +
           '<td class="num">' + o.pieces + '</td>' +
           '<td class="num">' + money(o.amount) + '</td></tr>';
       }).join('');
 
+      var foot = orders.length
+        ? '<tr class="foot"><td colspan="4">รวม ' + orders.length + ' รายการ</td><td class="num">' + money(day ? day.total : 0) + ' บาท</td></tr>'
+        : '';
+
       $('#dayDetail').innerHTML = summary +
-        '<h2>รายการออเดอร์วันนี้</h2>' +
+        '<h2>รายการออเดอร์วันนี้ (สำหรับกระทบยอดกับบัญชีธนาคาร)' +
+        '<button class="btn-copy" id="btn-copy-day">คัดลอกสรุปยอด</button></h2>' +
         '<div class="tablewrap"><table>' +
-        '<tr><th>ผู้สั่งซื้อ</th><th>วิธีจัดส่ง</th><th class="num">ชิ้น</th><th class="num">ยอดโอน (บาท)</th></tr>' +
-        (rows || '<tr><td colspan="4" class="empty">ไม่มีข้อมูล</td></tr>') + '</table></div>';
+        '<tr><th>เวลา</th><th>ผู้สั่งซื้อ</th><th>วิธีจัดส่ง</th><th class="num">ชิ้น</th><th class="num">ยอดโอน (บาท)</th></tr>' +
+        (rows || '<tr><td colspan="5" class="empty">ไม่มีข้อมูล</td></tr>') + foot + '</table></div>' +
+        '<p class="msg ok" id="copy-msg" style="display:none;"></p>';
+
+      var copyBtn = $('#btn-copy-day');
+      if(copyBtn){
+        copyBtn.addEventListener('click', function(){ copyDayText(dateStr, orders, day); });
+      }
+    }
+
+    function copyDayText(dateStr, orders, day){
+      var lines = orders.map(function(o){
+        return o.time + ' คุณ' + o.name + '   ' + money(o.amount) + '.-';
+      });
+      var text = 'วันที่ ' + thShortDate(dateStr) + '\n\n' +
+        lines.join('\n') +
+        '\n\nรวม ' + orders.length + ' รายการ เป็นเงิน ' + money(day ? day.total : 0) + '.-';
+      navigator.clipboard.writeText(text).then(function(){
+        var m = $('#copy-msg');
+        if(!m) return;
+        m.textContent = 'คัดลอกแล้ว — เอาไปวางเทียบกับที่เหรัญญิกแจ้งได้เลย';
+        m.style.display = 'block';
+      }).catch(function(){
+        var m = $('#copy-msg');
+        if(!m) return;
+        m.textContent = 'คัดลอกไม่สำเร็จ (เบราว์เซอร์อาจไม่รองรับ)';
+        m.className = 'msg';
+        m.style.display = 'block';
+      });
     }
 
     $('#daySelect').addEventListener('change', function(){
