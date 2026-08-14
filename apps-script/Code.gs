@@ -454,6 +454,9 @@ function doGet(e) {
     if (params.mode === 'admin') {
       return jsonOut_(adminSearch_(params));
     }
+    if (params.mode === 'report') {
+      return jsonOut_(reportData_(params));
+    }
     return jsonOut_(customerSearch_(params));
   } catch (err) {
     return jsonOut_({ ok: false, error: err.message });
@@ -565,4 +568,57 @@ function markReceived_(data) {
     updated.push(rowNum);
   });
   return { ok: true, updated: updated, skipped: skipped };
+}
+
+// ============================================================
+// รายงานยอดขายรายวัน — ใช้กับหน้าแอดมิน (report.html) ต้องมี token เหมือน checkin.html
+// ============================================================
+//
+// นับยอดขายจาก "ยอดแจ้งการโอน (บาท)" ซึ่งมีค่าอยู่แค่แถวแรกของแต่ละ OrderID เท่านั้น (แถวอื่นเป็น 0
+// อยู่แล้ว) เพื่อไม่ให้ออเดอร์ที่มีหลายคน/หลายแถวถูกนับยอดซ้ำ ส่วนจำนวนชิ้นรวมทุกแถวของ OrderID นั้น
+function reportData_(params) {
+  requireAdminToken_(params);
+  var sheet = getSheet_();
+  var data = readSheetRows_(sheet);
+  var h = data.headerVals;
+  function idx(name) { return h.indexOf(name); }
+  var iTs = idx('Timestamp'), iOrderId = idx('OrderID'), iName = idx('ชื่อผู้สั่งซื้อ'),
+    iLabel = idx('สำหรับ'), iShip = idx('วิธีจัดส่ง'), iTransfer = idx('ยอดแจ้งการโอน (บาท)'),
+    iTankOn = idx('สั่งเสื้อกล้าม'), iShortOn = idx('สั่งเสื้อแขนสั้น'), iShortsOn = idx('สั่งกางเกง');
+
+  var orders = {};
+  var orderSeq = [];
+
+  data.rows.forEach(function (row) {
+    var oid = row[iOrderId];
+    if (!oid) return;
+    var pieces = (row[iTankOn] === 'ใช่' ? 1 : 0) + (row[iShortOn] === 'ใช่' ? 1 : 0) + (row[iShortsOn] === 'ใช่' ? 1 : 0);
+    if (!orders[oid]) {
+      var ts = row[iTs];
+      var dateStr = ts ? Utilities.formatDate(new Date(ts), 'Asia/Bangkok', 'yyyy-MM-dd') : 'ไม่ทราบวันที่';
+      orders[oid] = {
+        orderId: oid, date: dateStr,
+        name: row[iName], label: row[iLabel], shipMethod: row[iShip],
+        amount: Number(row[iTransfer]) || 0, pieces: 0
+      };
+      orderSeq.push(oid);
+    }
+    orders[oid].pieces += pieces;
+  });
+
+  var orderList = orderSeq.map(function (oid) { return orders[oid]; });
+
+  var days = {};
+  orderList.forEach(function (o) {
+    if (!days[o.date]) days[o.date] = { date: o.date, total: 0, orderCount: 0, pieces: 0 };
+    days[o.date].total += o.amount;
+    days[o.date].orderCount += 1;
+    days[o.date].pieces += o.pieces;
+  });
+  var dayList = Object.keys(days).map(function (d) { return days[d]; })
+    .sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+
+  var grandTotal = orderList.reduce(function (s, o) { return s + o.amount; }, 0);
+
+  return { ok: true, grandTotal: grandTotal, grandOrderCount: orderList.length, days: dayList, orders: orderList };
 }
