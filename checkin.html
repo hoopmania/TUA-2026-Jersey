@@ -53,6 +53,7 @@
   .row .status{display:inline-block; margin-top:5px; font-size:.74rem; font-weight:700; padding:3px 8px; border-radius:99px; background:var(--maroon); color:#fff;}
   .row .status.received{background:var(--success);}
   .row .status.other{background:var(--muted);}
+  .row .reason{font-size:.74rem; color:var(--danger); margin-top:3px;}
 
   .bar{position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line); padding:10px 14px calc(10px + env(safe-area-inset-bottom)); display:flex; justify-content:space-between; align-items:center; gap:10px;}
   .bar .count{font-size:.86rem; color:var(--muted);}
@@ -142,6 +143,9 @@
         var canCheck = r.shipMethod === SHIP_LABEL_PICKUP && r.status !== 'รับชุดแล้ว';
         var statusClass = r.status === 'รับชุดแล้ว' ? 'received' : (r.shipMethod !== SHIP_LABEL_PICKUP ? 'other' : '');
         var who = r.label ? (r.name + ' (' + r.label + ')') : r.name;
+        var reason = '';
+        if(r.status === 'รับชุดแล้ว') reason = 'รับชุดไปแล้ว';
+        else if(r.shipMethod !== SHIP_LABEL_PICKUP) reason = 'จัดส่งที่บ้าน — เช็คอินรับของที่นี่ไม่ได้';
         return '<div class="row' + (canCheck ? '' : ' disabled') + '" data-row="' + r.row + '">' +
           '<input type="checkbox" ' + (canCheck ? '' : 'disabled') + ' data-row="' + r.row + '">' +
           '<div class="info">' +
@@ -149,6 +153,7 @@
             '<div class="meta">' + esc(r.phone) + (r.category ? ' • ' + esc(r.category) : '') + '</div>' +
             '<div class="items">' + esc(itemLines(r) || '—') + '</div>' +
             '<span class="status ' + statusClass + '">' + esc(r.status || 'รอสรุปยอดสั่งซื้อ') + '</span>' +
+            (reason ? '<div class="reason">' + esc(reason) + '</div>' : '') +
           '</div>' +
         '</div>';
       }).join('');
