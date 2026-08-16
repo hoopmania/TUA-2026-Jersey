@@ -409,6 +409,8 @@ function onOpen() {
     .addItem('4. จัดส่งแล้ว', 'markShipped')
     .addItem('5. พร้อมให้มารับที่โรงยิม (เฉพาะกลุ่มรับเอง)', 'markReadyForPickup')
     .addSeparator()
+    .addItem('ดูสถิติการสั่งซื้อ (สรุปแยกรุ่น/ชนิดเสื้อ)', 'showOrderStats')
+    .addSeparator()
     .addItem('ซ่อมเบอร์โทรเลข 0 หาย (ครั้งเดียว)', 'repairPhoneLeadingZeros')
     .addItem('ตั้ง/ดูรหัสเข้าหน้าแอดมิน (ครั้งเดียว)', 'setAdminToken')
     .addToUi();
@@ -622,4 +624,76 @@ function reportData_(params) {
   var grandTotal = orderList.reduce(function (s, o) { return s + o.amount; }, 0);
 
   return { ok: true, grandTotal: grandTotal, grandOrderCount: orderList.length, days: dayList, orders: orderList };
+}
+
+// ============================================================
+// สถิติการสั่งซื้อ — สร้าง/อัปเดตแท็บ "สถิติการสั่งซื้อ" ให้อัตโนมัติจากเมนู
+// ============================================================
+//
+// ใช้สูตร QUERY/COUNTIF ที่อ้างอิงกลับไปที่ชีต Orders โดยตรง (ไม่ใช่ค่านิ่งที่ต้องกดรันซ้ำทุกครั้ง)
+// เปิดแท็บนี้เมื่อไหร่ตัวเลขจะอัปเดตอัตโนมัติตามข้อมูลล่าสุดในชีต Orders เสมอ
+function columnLetter_(idx1based) {
+  var letter = '';
+  var n = idx1based;
+  while (n > 0) {
+    var rem = (n - 1) % 26;
+    letter = String.fromCharCode(65 + rem) + letter;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letter;
+}
+
+function showOrderStats() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var orderSheet = getSheet_();
+  var lastCol = orderSheet.getLastColumn();
+  var headerVals = orderSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  function colL(name) {
+    var i = headerVals.indexOf(name);
+    if (i === -1) throw new Error('ไม่พบคอลัมน์ "' + name + '"');
+    return columnLetter_(i + 1);
+  }
+
+  var cCategory = colL('รุ่นนักกีฬาที่ลงแข่ง');
+  var cTank = colL('สั่งเสื้อกล้าม');
+  var cShort = colL('สั่งเสื้อแขนสั้น');
+  var cShorts = colL('สั่งกางเกง');
+  var cShortsSkip = colL('ไม่รับกางเกง (ยืนยันแล้ว)');
+  var ref = SHEET_NAME;
+
+  var stat = ss.getSheetByName('สถิติการสั่งซื้อ');
+  if (!stat) stat = ss.insertSheet('สถิติการสั่งซื้อ');
+  stat.clear();
+
+  stat.getRange('A1').setValue('จำนวนรายการ (คน) แยกตามรุ่น');
+  stat.getRange('A2').setFormula(
+    '=QUERY(' + ref + '!' + cCategory + '2:' + cCategory +
+    ',"select Col1, count(Col1) where Col1 is not null group by Col1 label count(Col1) \'จำนวนคน\' order by count(Col1) desc")'
+  );
+
+  stat.getRange('D1').setValue('เปรียบเทียบชนิดเสื้อที่สั่ง');
+  stat.getRange('D2').setValue('เสื้อกล้าม');
+  stat.getRange('E2').setFormula('=COUNTIF(' + ref + '!' + cTank + '2:' + cTank + ',"ใช่")');
+  stat.getRange('D3').setValue('เสื้อแขนสั้น');
+  stat.getRange('E3').setFormula('=COUNTIF(' + ref + '!' + cShort + '2:' + cShort + ',"ใช่")');
+
+  stat.getRange('D5').setValue('กางเกง');
+  stat.getRange('D6').setValue('สั่งกางเกงด้วย');
+  stat.getRange('E6').setFormula('=COUNTIF(' + ref + '!' + cShorts + '2:' + cShorts + ',"ใช่")');
+  stat.getRange('D7').setValue('ยืนยันไม่เอากางเกง');
+  stat.getRange('E7').setFormula('=COUNTIF(' + ref + '!' + cShortsSkip + '2:' + cShortsSkip + ',"ใช่")');
+
+  stat.getRange('D9').setValue('สั่งเป็นชุด (เสื้อ+กางเกงพร้อมกัน)');
+  stat.getRange('D10').setValue('เสื้อกล้าม + กางเกง');
+  stat.getRange('E10').setFormula('=COUNTIFS(' + ref + '!' + cTank + '2:' + cTank + ',"ใช่",' + ref + '!' + cShorts + '2:' + cShorts + ',"ใช่")');
+  stat.getRange('D11').setValue('เสื้อแขนสั้น + กางเกง');
+  stat.getRange('E11').setFormula('=COUNTIFS(' + ref + '!' + cShort + '2:' + cShort + ',"ใช่",' + ref + '!' + cShorts + '2:' + cShorts + ',"ใช่")');
+
+  stat.getRange('A1').setFontWeight('bold');
+  stat.getRange('D1').setFontWeight('bold');
+  stat.getRange('D5').setFontWeight('bold');
+  stat.getRange('D9').setFontWeight('bold');
+  stat.autoResizeColumns(1, 5);
+
+  SpreadsheetApp.getUi().alert('สร้าง/อัปเดตแท็บ "สถิติการสั่งซื้อ" แล้ว — ไปดูได้ที่แท็บด้านล่างของชีต ตัวเลขจะอัปเดตอัตโนมัติทุกครั้งที่มีออเดอร์ใหม่');
 }
