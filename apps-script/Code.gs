@@ -668,7 +668,7 @@ function showOrderStats() {
   stat.getRange('A1').setValue('จำนวนรายการ (คน) แยกตามรุ่น');
   stat.getRange('A2').setFormula(
     '=QUERY(' + ref + '!' + cCategory + '2:' + cCategory +
-    ',"select Col1, count(Col1) where Col1 is not null group by Col1 label count(Col1) \'จำนวนคน\' order by count(Col1) desc")'
+    ',"select Col1, count(Col1) where Col1 is not null group by Col1 order by count(Col1) desc label count(Col1) \'จำนวนคน\'")'
   );
 
   stat.getRange('D1').setValue('เปรียบเทียบชนิดเสื้อที่สั่ง');
