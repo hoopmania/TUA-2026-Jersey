@@ -410,6 +410,7 @@ function onOpen() {
     .addItem('5. พร้อมให้มารับที่โรงยิม (เฉพาะกลุ่มรับเอง)', 'markReadyForPickup')
     .addSeparator()
     .addItem('ดูสถิติการสั่งซื้อ (สรุปแยกรุ่น/ชนิดเสื้อ)', 'showOrderStats')
+    .addItem('สร้าง/อัปเดตตารางลาเบลจัดส่ง', 'buildShippingLabels')
     .addSeparator()
     .addItem('ซ่อมเบอร์โทรเลข 0 หาย (ครั้งเดียว)', 'repairPhoneLeadingZeros')
     .addItem('ตั้ง/ดูรหัสเข้าหน้าแอดมิน (ครั้งเดียว)', 'setAdminToken')
@@ -696,4 +697,146 @@ function showOrderStats() {
   stat.autoResizeColumns(1, 5);
 
   SpreadsheetApp.getUi().alert('สร้าง/อัปเดตแท็บ "สถิติการสั่งซื้อ" แล้ว — ไปดูได้ที่แท็บด้านล่างของชีต ตัวเลขจะอัปเดตอัตโนมัติทุกครั้งที่มีออเดอร์ใหม่');
+}
+
+// ============================================================
+// ตารางลาเบลจัดส่ง — 1 แถวต่อ 1 พัสดุ (OrderID) เฉพาะออเดอร์ที่เลือก "จัดส่งที่บ้าน"
+// ============================================================
+//
+// สร้างแท็บ "ลาเบลจัดส่ง" ในชีตเดียวกัน: ลำดับที่สั่ง, ผู้รับ+ที่อยู่+เบอร์, รายการในพัสดุ (แยกเป็นรายคน
+// บอกรุ่น/สั่งให้ใคร/ไซส์/ชื่อ-เบอร์สกรีน) ฯลฯ — เป็นค่านิ่งที่ดึงมาจากแท็บ Orders ณ ตอนกดเมนู
+// (ออเดอร์ใหม่เข้ามาแล้วกดเมนูอีกครั้งเพื่ออัปเดต) คอลัมน์ที่แอดมินกรอกเอง (แพ็คแล้ว / เลขพัสดุ /
+// หมายเหตุแอดมิน) จะถูก "จำไว้ตาม OrderID" และใส่กลับให้เหมือนเดิมทุกครั้งที่อัปเดต ไม่หาย
+var LABEL_SHEET_NAME = 'ลาเบลจัดส่ง';
+var LABEL_MANUAL_COLS = ['แพ็คแล้ว', 'เลขพัสดุ', 'หมายเหตุแอดมิน'];
+
+// ส่วนคำนวณล้วน ๆ (ไม่แตะ Sheets) — รับ header + แถวจากแท็บ Orders คืนรายการพัสดุที่ต้องทำลาเบล
+// (ทดสอบแยกด้วย Node ได้) seq = ลำดับที่สั่งจริงของ OrderID นั้นเมื่อนับทุกออเดอร์ (รวมกลุ่มรับเอง)
+function buildLabelOrders_(h, rows) {
+  function ix(name) {
+    var i = h.indexOf(name);
+    if (i === -1) throw new Error('ไม่พบคอลัมน์ "' + name + '"');
+    return i;
+  }
+  var c = {
+    oid: ix('OrderID'), ts: ix('Timestamp'), buyer: ix('ชื่อผู้สั่งซื้อ'), phone: ix('เบอร์โทร'),
+    label: ix('สำหรับ'), cat: ix('รุ่นนักกีฬาที่ลงแข่ง'),
+    tankOn: ix('สั่งเสื้อกล้าม'), tankSize: ix('ไซส์เสื้อกล้าม'), tankName: ix('ชื่อสกรีนเสื้อกล้าม'), tankNum: ix('เบอร์เสื้อกล้าม'),
+    shortOn: ix('สั่งเสื้อแขนสั้น'), shortSize: ix('ไซส์เสื้อแขนสั้น'), shortName: ix('ชื่อสกรีนเสื้อแขนสั้น'), shortNum: ix('เบอร์เสื้อแขนสั้น'),
+    shortsOn: ix('สั่งกางเกง'), shortsSize: ix('ไซส์กางเกง'),
+    note: ix('หมายเหตุ'), ship: ix('วิธีจัดส่ง'), sName: ix('ผู้รับ(จัดส่ง)'), sAddr: ix('ที่อยู่จัดส่ง'),
+    sPhone: ix('เบอร์โทร(จัดส่ง)'), fee: ix('ค่าจัดส่ง (บาท)')
+  };
+
+  function phoneText(v) {
+    var s = String(v == null ? '' : v).trim();
+    return /^[0-9]{9}$/.test(s) ? '0' + s : s; // กันเลข 0 นำหน้าหายในข้อมูลเก่า (แสดงผลเท่านั้น ไม่แก้ข้อมูลต้นทาง)
+  }
+
+  var order = [], byId = {};
+  rows.forEach(function (row) {
+    var oid = row[c.oid];
+    if (!oid) return;
+    if (!byId[oid]) { byId[oid] = { orderId: oid, seq: order.length + 1, rows: [] }; order.push(byId[oid]); }
+    byId[oid].rows.push(row);
+  });
+
+  var out = [];
+  order.forEach(function (o) {
+    var first = o.rows[0];
+    if (first[c.ship] !== SHIP_LABEL_DELIVERY) return;
+
+    var pieces = 0;
+    var blocks = o.rows.map(function (row, n) {
+      var who = String(row[c.label] || '').trim() || 'ผู้สั่ง';
+      var cat = String(row[c.cat] || '').trim();
+      var lines = [(n + 1) + '. ' + who + (cat ? ' (' + cat + ')' : '')];
+      [
+        ['เสื้อกล้าม', c.tankOn, c.tankSize, c.tankName, c.tankNum],
+        ['เสื้อแขนสั้น', c.shortOn, c.shortSize, c.shortName, c.shortNum],
+        ['กางเกง', c.shortsOn, c.shortsSize, -1, -1]
+      ].forEach(function (g) {
+        if (row[g[1]] !== 'ใช่') return;
+        pieces++;
+        var line = '   - ' + g[0] + ' ไซส์ ' + (row[g[2]] || '-');
+        if (g[3] !== -1) {
+          var pn = String(row[g[3]] || '').trim(), pnum = String(row[g[4]] || '').trim();
+          if (pn || pnum) line += '  [สกรีน' + (pn ? ' ชื่อ: ' + pn : '') + (pnum ? ' เบอร์: ' + pnum : '') + ']';
+        }
+        lines.push(line);
+      });
+      var note = String(row[c.note] || '').trim();
+      if (note) lines.push('   หมายเหตุลูกค้า: ' + note);
+      return lines.join('\n');
+    });
+
+    out.push({
+      seq: o.seq,
+      orderId: o.orderId,
+      recipient: String(first[c.sName] || first[c.buyer] || '').trim(),
+      address: String(first[c.sAddr] || '').trim(),
+      phone: phoneText(first[c.sPhone] || first[c.phone]),
+      buyer: String(first[c.buyer] || '').trim(),
+      items: blocks.join('\n'),
+      people: o.rows.length,
+      pieces: pieces,
+      fee: first[c.fee] === '' ? '' : first[c.fee]
+    });
+  });
+  return { labels: out, totalOrders: order.length };
+}
+
+function buildShippingLabels() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var data = readSheetRows_(getSheet_());
+  if (!data.rows.length) { SpreadsheetApp.getUi().alert('ยังไม่มีออเดอร์ในชีต Orders'); return; }
+
+  var built = buildLabelOrders_(data.headerVals, data.rows);
+  var labels = built.labels;
+
+  var HEAD = ['ลำดับที่สั่ง', 'OrderID', 'ผู้รับ', 'ที่อยู่จัดส่ง', 'เบอร์ผู้รับ', 'รายการในพัสดุ (แยกรายคน)',
+    'จำนวนคน', 'จำนวนชิ้น', 'ผู้สั่งซื้อ', 'ค่าส่ง (บาท)'].concat(LABEL_MANUAL_COLS);
+
+  var sheet = ss.getSheetByName(LABEL_SHEET_NAME);
+  var keep = {}; // OrderID -> ค่าที่แอดมินกรอกไว้เอง
+  if (sheet && sheet.getLastRow() >= 2) {
+    var old = sheet.getDataRange().getValues();
+    var oh = old[0];
+    var oOid = oh.indexOf('OrderID');
+    var oManual = LABEL_MANUAL_COLS.map(function (n) { return oh.indexOf(n); });
+    if (oOid !== -1) {
+      old.slice(1).forEach(function (r) {
+        keep[r[oOid]] = oManual.map(function (i) { return i === -1 ? '' : r[i]; });
+      });
+    }
+  }
+  if (!sheet) sheet = ss.insertSheet(LABEL_SHEET_NAME);
+  sheet.clear();
+  sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).clearDataValidations();
+
+  sheet.getRange(1, 1, 1, HEAD.length).setValues([HEAD])
+    .setFontWeight('bold').setBackground('#8A1F2B').setFontColor('#FFFFFF').setVerticalAlignment('middle');
+  sheet.setFrozenRows(1);
+
+  if (labels.length) {
+    var body = labels.map(function (l) {
+      var m = keep[l.orderId] || [false, '', ''];
+      return [l.seq, l.orderId, l.recipient, l.address, l.phone, l.items, l.people, l.pieces, l.buyer, l.fee,
+        m[0] === true, m[1], m[2]];
+    });
+    sheet.getRange(2, 5, body.length, 1).setNumberFormat('@'); // เบอร์ผู้รับ เป็นข้อความ กัน 0 นำหน้าหาย
+    sheet.getRange(2, 1, body.length, HEAD.length).setValues(body);
+    sheet.getRange(2, 11, body.length, 1).insertCheckboxes();
+    var all = sheet.getRange(2, 1, body.length, HEAD.length);
+    all.setVerticalAlignment('top').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+    sheet.getRange(2, 1, body.length, 1).setHorizontalAlignment('center');
+  }
+
+  [70, 130, 150, 260, 110, 400, 55, 55, 150, 70, 60, 130, 160].forEach(function (w, i) { sheet.setColumnWidth(i + 1, w); });
+  if (labels.length) sheet.autoResizeRows(2, labels.length);
+
+  SpreadsheetApp.getUi().alert(
+    'สร้าง/อัปเดตแท็บ "' + LABEL_SHEET_NAME + '" แล้ว\n' +
+    'พัสดุที่ต้องส่ง ' + labels.length + ' กล่อง จากออเดอร์ทั้งหมด ' + built.totalOrders + ' ออเดอร์ (ที่เหลือเป็นกลุ่มรับเองที่โรงยิม)'
+  );
 }
