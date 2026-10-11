@@ -484,8 +484,10 @@ function rowToResult_(headerVals, row, rowNumber) {
     phone: String(get('เบอร์โทร')),
     label: get('สำหรับ'),
     category: get('รุ่นนักกีฬาที่ลงแข่ง'),
-    tank: { on: get('สั่งเสื้อกล้าม') === 'ใช่', size: get('ไซส์เสื้อกล้าม') },
-    short: { on: get('สั่งเสื้อแขนสั้น') === 'ใช่', size: get('ไซส์เสื้อแขนสั้น') },
+    tank: { on: get('สั่งเสื้อกล้าม') === 'ใช่', size: get('ไซส์เสื้อกล้าม'),
+      printName: String(get('ชื่อสกรีนเสื้อกล้าม')), printNum: String(get('เบอร์เสื้อกล้าม')) },
+    short: { on: get('สั่งเสื้อแขนสั้น') === 'ใช่', size: get('ไซส์เสื้อแขนสั้น'),
+      printName: String(get('ชื่อสกรีนเสื้อแขนสั้น')), printNum: String(get('เบอร์เสื้อแขนสั้น')) },
     shorts: { on: get('สั่งกางเกง') === 'ใช่', size: get('ไซส์กางเกง') },
     shipMethod: get('วิธีจัดส่ง'),
     status: get('สถานะ') || STATUS_DEFAULT

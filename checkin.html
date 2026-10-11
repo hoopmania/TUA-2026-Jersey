@@ -31,9 +31,21 @@
   }
   .wrap{max-width:640px; margin:0 auto;}
   h1{font-size:1.15rem; margin:0 0 2px;}
-  .sub{color:var(--muted); font-size:.82rem; margin:0 0 16px;}
+  .sub{color:var(--muted); font-size:.82rem; margin:0 0 14px;}
+
+  details.sumbox{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; margin-bottom:14px;}
+  details.sumbox summary{font-weight:700; font-size:.92rem; cursor:pointer;}
+  table.sum{width:100%; border-collapse:collapse; font-size:.8rem; margin-top:8px;}
+  table.sum th, table.sum td{padding:6px 4px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap;}
+  table.sum th:first-child, table.sum td:first-child{text-align:left; white-space:normal;}
+  table.sum th{color:var(--muted); font-weight:700; font-size:.72rem;}
+  table.sum tr.total td{border-top:2px solid var(--line); border-bottom:none; font-weight:700;}
+  table.sum td.recv{color:var(--success); font-weight:700;}
+  table.sum td.left{color:var(--maroon); font-weight:700;}
+  .sumnote{font-size:.72rem; color:var(--muted); margin:6px 0 0;}
+
   .search-row{display:flex; gap:8px; margin-bottom:8px;}
-  .search-row input[type="text"]{flex:1;}
+  .search-row input[type="text"]{flex:1; min-width:0;}
   input[type="text"], select{
     padding:11px 12px; font-size:.95rem; font-family:inherit;
     background:var(--input-bg); color:var(--ink); border:1.5px solid var(--line); border-radius:9px;
@@ -41,7 +53,9 @@
   select{width:100%; margin-bottom:8px;}
   .btn{padding:11px 16px; font-size:.92rem; font-weight:700; font-family:inherit; color:#fff; background:var(--maroon); border:none; border-radius:9px; cursor:pointer;}
   .btn:disabled{background:var(--line); color:var(--muted); cursor:not-allowed;}
-  .btn-ghost{background:transparent; color:var(--maroon); border:1.5px solid var(--line);}
+  .hide-row{display:flex; align-items:center; gap:8px; font-size:.9rem; font-weight:600; margin:2px 0 12px; cursor:pointer;}
+  .hide-row input{width:20px; height:20px; accent-color:var(--maroon); flex:none;}
+  .hidden-note{font-size:.78rem; color:var(--muted); margin:-4px 0 10px;}
 
   .row{display:flex; gap:10px; align-items:flex-start; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px;}
   .row.disabled{opacity:.55;}
@@ -49,8 +63,15 @@
   .row .info{flex:1; min-width:0;}
   .row .name{font-weight:700; font-size:.94rem;}
   .row .meta{font-size:.78rem; color:var(--muted); margin-top:1px;}
-  .row .items{font-size:.82rem; margin-top:4px;}
-  .row .status{display:inline-block; margin-top:5px; font-size:.74rem; font-weight:700; padding:3px 8px; border-radius:99px; background:var(--maroon); color:#fff;}
+  .row .items{margin-top:5px;}
+  .g{font-size:.86rem; padding:3px 0; border-top:1px dashed var(--line); display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px;}
+  .g:first-child{border-top:none;}
+  .g .gn{font-weight:600;}
+  .g .sz{font-weight:700; background:var(--paper); border:1px solid var(--line); border-radius:6px; padding:0 6px;}
+  .g .pnum{font-weight:800; font-size:1.05rem; color:#fff; background:var(--maroon); border-radius:6px; padding:0 8px;}
+  .g .pname{font-size:.82rem; color:var(--muted);}
+  .g .noprint{font-size:.78rem; color:var(--muted); font-style:italic;}
+  .row .status{display:inline-block; margin-top:6px; font-size:.74rem; font-weight:700; padding:3px 8px; border-radius:99px; background:var(--maroon); color:#fff;}
   .row .status.received{background:var(--success);}
   .row .status.other{background:var(--muted);}
   .row .reason{font-size:.74rem; color:var(--danger); margin-top:3px;}
@@ -68,9 +89,14 @@
   <h1>เช็คชื่อรับชุด</h1>
   <p class="sub">สำหรับทีมแอดมินเท่านั้น — ค้นหาแล้วติ๊กเลือกได้หลายรายการ ก่อนกดยืนยัน</p>
 
+  <details class="sumbox" id="sumbox" open>
+    <summary>สรุปภาพรวมแต่ละรุ่น</summary>
+    <div id="summary"><p class="empty">กำลังโหลด...</p></div>
+  </details>
+
   <div class="search-row">
     <input type="text" id="q" placeholder="ค้นชื่อหรือเบอร์โทร">
-    <button class="btn" id="btn-search">ค้นหา</button>
+    <button class="btn" id="btn-refresh" title="โหลดข้อมูลล่าสุดจากชีต">รีเฟรช</button>
   </div>
   <select id="category">
     <option value="">-- ทุกรุ่น --</option>
@@ -83,6 +109,8 @@
     <option>หญิง 45+</option>
     <option>กองเชียร์หรืออื่นๆ</option>
   </select>
+  <label class="hide-row"><input type="checkbox" id="hide-delivery"> ซ่อนกลุ่มที่เลือกจัดส่งที่บ้าน</label>
+  <div class="hidden-note" id="hidden-note" style="display:none;"></div>
 
   <p class="msg" id="msg" style="display:none;"></p>
   <div id="results"></div>
@@ -97,6 +125,9 @@
 (function(){
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxwVUZUUNgz3xuwcdCQiCekAdiERjYh55q3bBAoukHKwnIsO4-FfPmtzanRi6uNM-8G/exec';
   var SHIP_LABEL_PICKUP = 'รับเองที่โรงยิมท่าพระจันทร์';
+  var RECEIVED = 'รับชุดแล้ว';
+  var CATS = ['ชาย 27+','ชาย 40+','ชาย 50+','ชาย 57+','หญิง 27+','หญิง 35+','หญิง 45+','กองเชียร์หรืออื่นๆ'];
+  var HIDE_KEY = 'checkin_hide_delivery';
 
   var token = new URLSearchParams(location.search).get('token');
   if(!token){
@@ -107,7 +138,13 @@
 
   function initApp(){
     function $(s){ return document.querySelector(s); }
-    var selected = {}; // row number -> true
+    function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+    var allRows = [];   // ข้อมูลทุกรายการจากชีต (กรอง/ค้นหาทำฝั่งหน้านี้ทั้งหมด เร็วกว่ายิงเซิร์ฟเวอร์ทุกครั้ง)
+    var selected = {};  // row number -> true
+
+    function isPickup(r){ return r.shipMethod === SHIP_LABEL_PICKUP; }
+    function isReceived(r){ return r.status === RECEIVED; }
 
     function showMsg(text, type){
       var m = $('#msg');
@@ -117,12 +154,65 @@
       m.style.display = 'block';
     }
 
-    function itemLines(r){
-      var lines = [];
-      if(r.tank.on) lines.push('เสื้อกล้าม '+(r.tank.size||'-'));
-      if(r.short.on) lines.push('เสื้อแขนสั้น '+(r.short.size||'-'));
-      if(r.shorts.on) lines.push('กางเกง '+(r.shorts.size||'-'));
-      return lines.join(' • ');
+    // ---------- สรุปภาพรวม ----------
+    function renderSummary(){
+      var map = {}, order = CATS.slice();
+      allRows.forEach(function(r){
+        var k = r.category || 'ไม่ระบุรุ่น';
+        if(!map[k]){ map[k] = {pickup:0, received:0, delivery:0}; if(order.indexOf(k) === -1) order.push(k); }
+        if(isPickup(r)){ map[k].pickup++; if(isReceived(r)) map[k].received++; }
+        else map[k].delivery++;
+      });
+      var tot = {pickup:0, received:0, delivery:0};
+      var rows = '';
+      order.forEach(function(k){
+        var s = map[k];
+        if(!s) return;
+        tot.pickup += s.pickup; tot.received += s.received; tot.delivery += s.delivery;
+        rows += '<tr><td>' + esc(k) + '</td><td>' + s.pickup + '</td><td class="recv">' + s.received +
+          '</td><td class="left">' + (s.pickup - s.received) + '</td><td>' + s.delivery + '</td></tr>';
+      });
+      if(!rows){ $('#summary').innerHTML = '<p class="empty">ยังไม่มีออเดอร์</p>'; return; }
+      rows += '<tr class="total"><td>รวมทุกรุ่น</td><td>' + tot.pickup + '</td><td class="recv">' + tot.received +
+        '</td><td class="left">' + (tot.pickup - tot.received) + '</td><td>' + tot.delivery + '</td></tr>';
+      $('#summary').innerHTML =
+        '<table class="sum"><tr><th>รุ่น</th><th>รับที่โรงยิม</th><th>รับแล้ว</th><th>ยังไม่รับ</th><th>ส่งที่บ้าน</th></tr>' + rows + '</table>' +
+        '<p class="sumnote">นับเป็นจำนวนคน (1 แถวในชีต = 1 คน) • ไม่ขึ้นกับตัวกรองด้านล่าง</p>';
+    }
+
+    // ---------- รายการ ----------
+    function filterRows(hideDelivery){
+      var q = $('#q').value.trim().toLowerCase();
+      var cat = $('#category').value;
+      return allRows.filter(function(r){
+        if(cat && (r.category || '') !== cat) return false;
+        if(hideDelivery && !isPickup(r)) return false;
+        if(q){
+          var hay = (String(r.name||'') + ' ' + String(r.phone||'') + ' ' + String(r.label||'')).toLowerCase();
+          if(hay.indexOf(q) === -1) return false;
+        }
+        return true;
+      });
+    }
+
+    function garmentHtml(label, g, printable){
+      if(!g.on) return '';
+      var h = '<div class="g"><span class="gn">' + label + '</span><span class="sz">ไซส์ ' + esc(g.size || '-') + '</span>';
+      if(printable && g.printNum !== undefined){
+        var num = String(g.printNum || '').trim(), pn = String(g.printName || '').trim();
+        if(num || pn){
+          if(num) h += '<span class="pnum">#' + esc(num) + '</span>';
+          if(pn) h += '<span class="pname">' + esc(pn) + '</span>';
+        } else {
+          h += '<span class="noprint">ไม่สกรีน</span>';
+        }
+      }
+      return h + '</div>';
+    }
+
+    function itemsHtml(r){
+      var h = garmentHtml('เสื้อกล้าม', r.tank, true) + garmentHtml('เสื้อแขนสั้น', r.short, true) + garmentHtml('กางเกง', r.shorts, false);
+      return h || '<div class="g">—</div>';
     }
 
     function updateBar(){
@@ -131,27 +221,43 @@
       $('#count').textContent = 'เลือกไว้ ' + n + ' รายการ';
     }
 
-    function renderResults(results){
-      selected = {};
+    function renderList(){
+      var hide = $('#hide-delivery').checked;
+      var shown = filterRows(hide);
+
+      // เก็บเฉพาะที่ยังมองเห็นอยู่ — กันกดยืนยันโดยที่ลืมว่าเลือกแถวที่ถูกซ่อน/กรองออกไปแล้ว
+      var visible = {};
+      shown.forEach(function(r){ visible[String(r.row)] = true; });
+      Object.keys(selected).forEach(function(k){ if(!visible[k]) delete selected[k]; });
       updateBar();
+
+      var note = $('#hidden-note');
+      if(hide){
+        var hiddenN = filterRows(false).length - shown.length;
+        note.textContent = hiddenN > 0 ? 'ซ่อนรายการจัดส่งที่บ้านอยู่ ' + hiddenN + ' รายการ' : '';
+        note.style.display = hiddenN > 0 ? 'block' : 'none';
+      } else {
+        note.style.display = 'none';
+      }
+
       var el = $('#results');
-      if(!results.length){
+      if(!shown.length){
         el.innerHTML = '<p class="empty">ไม่พบรายการที่ตรงกับที่ค้นหา</p>';
         return;
       }
-      el.innerHTML = results.map(function(r){
-        var canCheck = r.shipMethod === SHIP_LABEL_PICKUP && r.status !== 'รับชุดแล้ว';
-        var statusClass = r.status === 'รับชุดแล้ว' ? 'received' : (r.shipMethod !== SHIP_LABEL_PICKUP ? 'other' : '');
+      el.innerHTML = shown.map(function(r){
+        var canCheck = isPickup(r) && !isReceived(r);
+        var statusClass = isReceived(r) ? 'received' : (!isPickup(r) ? 'other' : '');
         var who = r.label ? (r.name + ' (' + r.label + ')') : r.name;
         var reason = '';
-        if(r.status === 'รับชุดแล้ว') reason = 'รับชุดไปแล้ว';
-        else if(r.shipMethod !== SHIP_LABEL_PICKUP) reason = 'จัดส่งที่บ้าน — เช็คอินรับของที่นี่ไม่ได้';
+        if(isReceived(r)) reason = 'รับชุดไปแล้ว';
+        else if(!isPickup(r)) reason = 'จัดส่งที่บ้าน — เช็คอินรับของที่นี่ไม่ได้';
         return '<div class="row' + (canCheck ? '' : ' disabled') + '" data-row="' + r.row + '">' +
-          '<input type="checkbox" ' + (canCheck ? '' : 'disabled') + ' data-row="' + r.row + '">' +
+          '<input type="checkbox" ' + (canCheck ? '' : 'disabled ') + (selected[String(r.row)] ? 'checked ' : '') + 'data-row="' + r.row + '">' +
           '<div class="info">' +
             '<div class="name">' + esc(who) + '</div>' +
             '<div class="meta">' + esc(r.phone) + (r.category ? ' • ' + esc(r.category) : '') + '</div>' +
-            '<div class="items">' + esc(itemLines(r) || '—') + '</div>' +
+            '<div class="items">' + itemsHtml(r) + '</div>' +
             '<span class="status ' + statusClass + '">' + esc(r.status || 'รอสรุปยอดสั่งซื้อ') + '</span>' +
             (reason ? '<div class="reason">' + esc(reason) + '</div>' : '') +
           '</div>' +
@@ -159,31 +265,42 @@
       }).join('');
     }
 
-    function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
-
-    var lastResults = [];
-
-    function doSearch(){
+    // ---------- โหลดข้อมูล ----------
+    function fetchAll(okMsg){
       showMsg('');
-      var q = $('#q').value.trim();
-      var category = $('#category').value;
-      var url = APPS_SCRIPT_URL + '?mode=admin&token=' + encodeURIComponent(token) +
-        '&q=' + encodeURIComponent(q) + '&category=' + encodeURIComponent(category);
-      $('#btn-search').disabled = true;
+      var btn = $('#btn-refresh');
+      btn.disabled = true;
+      var url = APPS_SCRIPT_URL + '?mode=admin&token=' + encodeURIComponent(token) + '&q=&category=';
       fetch(url).then(function(res){ return res.json(); }).then(function(data){
-        $('#btn-search').disabled = false;
-        if(!data.ok){ showMsg(data.error || 'ค้นหาไม่สำเร็จ'); $('#results').innerHTML=''; return; }
-        lastResults = data.results;
-        renderResults(lastResults);
+        btn.disabled = false;
+        if(!data.ok){
+          showMsg(data.error || 'โหลดข้อมูลไม่สำเร็จ');
+          $('#summary').innerHTML = ''; $('#results').innerHTML = '';
+          return;
+        }
+        allRows = data.results;
+        renderSummary();
+        renderList();
+        if(okMsg) showMsg(okMsg, 'ok');
+        else if(allRows.length && allRows[0].tank && allRows[0].tank.printNum === undefined){
+          showMsg('ยังไม่เห็นเบอร์/ชื่อสกรีน — ต้องวาง Code.gs ล่าสุดใน Apps Script แล้ว Deploy เวอร์ชันใหม่ก่อน');
+        }
       }).catch(function(err){
-        $('#btn-search').disabled = false;
-        showMsg('ค้นหาไม่สำเร็จ: ' + err.message);
+        btn.disabled = false;
+        showMsg('โหลดข้อมูลไม่สำเร็จ: ' + err.message);
       });
     }
 
-    $('#btn-search').addEventListener('click', doSearch);
-    $('#q').addEventListener('keydown', function(ev){ if(ev.key==='Enter') doSearch(); });
-    $('#category').addEventListener('change', doSearch);
+    // ---------- events ----------
+    try { $('#hide-delivery').checked = localStorage.getItem(HIDE_KEY) === '1'; } catch(e){}
+
+    $('#btn-refresh').addEventListener('click', function(){ fetchAll(); });
+    $('#q').addEventListener('input', renderList);
+    $('#category').addEventListener('change', renderList);
+    $('#hide-delivery').addEventListener('change', function(){
+      try { localStorage.setItem(HIDE_KEY, this.checked ? '1' : '0'); } catch(e){}
+      renderList();
+    });
 
     $('#results').addEventListener('change', function(ev){
       var t = ev.target;
@@ -205,13 +322,16 @@
       }).then(function(res){ return res.json(); }).then(function(data){
         btn.disabled = false; btn.textContent = 'ยืนยันว่ามารับแล้ว';
         if(!data.ok){ showMsg(data.error || 'บันทึกไม่สำเร็จ'); return; }
-        showMsg('บันทึกสำเร็จ ' + data.updated.length + ' รายการ', 'ok');
-        doSearch(); // รีเฟรชผลลัพธ์ให้เห็นสถานะล่าสุด
+        selected = {};
+        updateBar();
+        fetchAll('บันทึกสำเร็จ ' + data.updated.length + ' รายการ'); // โหลดใหม่ให้สรุป/สถานะเป็นปัจจุบัน
       }).catch(function(err){
         btn.disabled = false; btn.textContent = 'ยืนยันว่ามารับแล้ว';
         showMsg('บันทึกไม่สำเร็จ: ' + err.message);
       });
     });
+
+    fetchAll();
   }
 })();
 </script>
