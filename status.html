@@ -52,6 +52,7 @@
   .items div{padding:3px 0; border-top:1px dashed var(--line);}
   .items div:first-child{border-top:none;}
   .ship{font-size:.8rem; color:var(--muted); margin-top:8px;}
+  .chk{font-size:.8rem; color:var(--danger); background:rgba(184,71,31,.1); border-radius:9px; padding:8px 10px; margin-top:10px; line-height:1.5;}
 </style>
 
 <div class="wrap">
@@ -98,25 +99,58 @@
     }
   }
 
-  function itemLines(r){
-    var lines = [];
-    if(r.tank.on) lines.push('เสื้อกล้าม ไซส์ '+(r.tank.size||'-'));
-    if(r.short.on) lines.push('เสื้อแขนสั้น ไซส์ '+(r.short.size||'-'));
-    if(r.shorts.on) lines.push('กางเกง ไซส์ '+(r.shorts.size||'-'));
-    return lines;
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+  // ใส่ข้อความกำหนดการได้ เช่น 'ภายในวันที่ 30 ก.ย. 2569' — ปล่อยว่างไว้ก็ได้ จะขึ้นเป็น "ก่อนเริ่มผลิต" แทน
+  var EDIT_DEADLINE_TEXT = '';
+
+  // สถานะที่ยังแก้ข้อมูลสกรีนทัน (ก่อนเริ่มผลิต)
+  function stillEditable(status){
+    return !status || status === 'รอสรุปยอดสั่งซื้อ' || status === 'สรุปยอดสั่งซื้อ';
+  }
+
+  // คืน {text, warn} ต่อชิ้น — warn มีค่าเมื่อชื่อ/เบอร์สกรีนไม่ครบ
+  function garmentInfo(label, g, printable){
+    if(!g.on) return null;
+    var text = label + ' ไซส์ ' + esc(g.size||'-');
+    var warn = '';
+    if(printable && g.printNum !== undefined){
+      var pn = String(g.printName||'').trim(), num = String(g.printNum||'').trim();
+      if(pn && num){ text += ' • ชื่อ "'+esc(pn)+'" เบอร์ '+esc(num); }
+      else if(pn){ text += ' • ชื่อ "'+esc(pn)+'" • ไม่ระบุเบอร์'; warn = label+': ระบุชื่อไว้ แต่ไม่ได้ระบุเบอร์'; }
+      else if(num){ text += ' • เบอร์ '+esc(num)+' • ไม่ระบุชื่อ'; warn = label+': ระบุเบอร์ไว้ แต่ไม่ได้ระบุชื่อ'; }
+      else { text += ' • ไม่สกรีนชื่อ/เบอร์'; warn = label+': ไม่ได้ระบุชื่อและเบอร์ (ไม่สกรีน)'; }
+    }
+    return {text: text, warn: warn};
+  }
+
+  function itemInfos(r){
+    return [
+      garmentInfo('เสื้อกล้าม', r.tank, true),
+      garmentInfo('เสื้อแขนสั้น', r.short, true),
+      garmentInfo('กางเกง', r.shorts, false)
+    ].filter(Boolean);
   }
 
   function renderResults(results){
     var el = $('#results');
     el.innerHTML = results.map(function(r){
       var who = r.label ? r.label : 'รายการของคุณ';
-      var items = itemLines(r).map(function(l){ return '<div>'+l+'</div>'; }).join('');
+      var infos = itemInfos(r);
+      var items = infos.map(function(l){ return '<div>'+l.text+'</div>'; }).join('');
+      var warns = infos.filter(function(l){ return l.warn; }).map(function(l){ return l.warn; });
+      var warnHtml = '';
+      if(warns.length && stillEditable(r.status)){
+        warnHtml = '<div class="chk"><b>ช่วยตรวจรายการสกรีนอีกครั้ง</b><br>'+warns.map(esc).join('<br>')+
+          '<br>หากไม่ตรงกับที่ต้องการ กรุณาแจ้งทีมงาน '+(EDIT_DEADLINE_TEXT ? esc(EDIT_DEADLINE_TEXT) : 'ก่อนเริ่มผลิต')+'</div>';
+      }
       return '<div class="card">'+
-        '<div class="who">'+who+'</div>'+
-        (r.category ? '<div class="cat">รุ่น: '+r.category+'</div>' : '')+
-        '<div class="status-badge">'+statusMessage(r.status, r.shipMethod)+'</div>'+
+        '<div class="who">'+esc(who)+'</div>'+
+        (r.category ? '<div class="cat">รุ่น: '+esc(r.category)+'</div>' : '')+
+        '<div class="status-badge">'+esc(statusMessage(r.status, r.shipMethod))+'</div>'+
         '<div class="items">'+(items || '<div>—</div>')+'</div>'+
-        '<div class="ship">วิธีจัดส่ง: '+(r.shipMethod||'—')+'</div>'+
+        warnHtml+
+        '<div class="ship">วิธีจัดส่ง: '+esc(r.shipMethod||'—')+'</div>'+
       '</div>';
     }).join('');
   }

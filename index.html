@@ -543,8 +543,19 @@
   function entryNeedsShortsWarning(e){
     return (e.tank.checked || e.short.checked) && !e.shorts.checked && !e.shortsSkip;
   }
+  // แยกกรณีชื่อ/เบอร์สกรีน: ok = ครบทั้งสองอย่าง, nameOnly = มีชื่อไม่มีเบอร์, numOnly = มีเบอร์ไม่มีชื่อ, none = ไม่ใส่เลย
+  function printCase(gEntry){
+    var hasName = !!gEntry.printName.trim(), hasNum = gEntry.printNum !== '';
+    if(hasName && hasNum) return 'ok';
+    if(hasName) return 'nameOnly';
+    if(hasNum) return 'numOnly';
+    return 'none';
+  }
+  // printSkip เก็บ "กรณีที่ลูกค้ากดยืนยันไว้" — ถ้าแก้ชื่อ/เบอร์จนกรณีเปลี่ยน ต้องกดยืนยันใหม่ (กันยืนยันไว้แล้วค่อยแก้ทีหลัง)
   function garmentNeedsPrintWarning(g, gEntry){
-    return g.print && gEntry.checked && (!gEntry.printName.trim() || gEntry.printNum==='') && !gEntry.printSkip;
+    if(!g.print || !gEntry.checked) return false;
+    var c = printCase(gEntry);
+    return c !== 'ok' && gEntry.printSkip !== c;
   }
   function printNameError(name){
     if(!name) return '';
@@ -559,11 +570,25 @@
   }
   function printWarnBoxHtml(i, g, gEntry){
     if(!garmentNeedsPrintWarning(g, gEntry)) return '';
+    var c = printCase(gEntry), title, hint, btn;
+    if(c === 'nameOnly'){
+      title = 'ระบุชื่อสกรีนแล้ว แต่ยังไม่ได้ระบุเบอร์เสื้อ';
+      hint = 'ถ้าต้องการสกรีนเฉพาะชื่อ ไม่ใส่เบอร์บน'+g.label+' กดยืนยันได้เลย หรือกรอกเบอร์เสื้อด้านบน';
+      btn = 'ยืนยัน สกรีนเฉพาะชื่อ ไม่ใส่เบอร์';
+    } else if(c === 'numOnly'){
+      title = 'ระบุเบอร์เสื้อแล้ว แต่ยังไม่ได้ระบุชื่อสกรีนหลังเสื้อ';
+      hint = 'ถ้าต้องการสกรีนเฉพาะเบอร์ ไม่ใส่ชื่อบน'+g.label+' กดยืนยันได้เลย หรือกรอกชื่อสกรีนด้านบน';
+      btn = 'ยืนยัน สกรีนเฉพาะเบอร์ ไม่ใส่ชื่อ';
+    } else {
+      title = 'ยังไม่ได้ระบุชื่อสกรีนหลังเสื้อ และ เบอร์เสื้อ';
+      hint = 'ถ้าไม่ต้องการสกรีนชื่อ/เบอร์บน'+g.label+' กดยืนยันได้เลย';
+      btn = 'ยืนยัน ไม่ต้องการสกรีนชื่อหรือเบอร์';
+    }
     return '<div class="warn-box" style="margin-top:0;">'+
       '<span style="font-size:1.15rem;">⚠️</span>'+
-      '<span><span class="t">ยังไม่ได้ระบุชื่อสกรีนหลังเสื้อ หรือ เบอร์เสื้อ</span>'+
-      '<div class="p">ถ้าไม่ต้องการสกรีนชื่อ/เบอร์บน'+g.label+' กดยืนยันได้เลย</div>'+
-      '<div class="btn-row"><button type="button" class="btn btn-ghost" data-act="skipprint" data-g="'+g.key+'" data-i="'+i+'">ยืนยัน ไม่ต้องการสกรีนชื่อหรือเบอร์</button></div>'+
+      '<span><span class="t">'+title+'</span>'+
+      '<div class="p">'+hint+'</div>'+
+      '<div class="btn-row"><button type="button" class="btn btn-ghost" data-act="skipprint" data-g="'+g.key+'" data-i="'+i+'">'+btn+'</button></div>'+
       '</span>'+
     '</div>';
   }
@@ -675,7 +700,7 @@
     }
     if(act==='addshorts'){ state.entries[i].shorts.checked = true; state.entries[i].shortsSkip = false; renderEntries(); updateCart(); return; }
     if(act==='skipshorts'){ state.entries[i].shortsSkip = true; renderEntries(); return; }
-    if(act==='skipprint'){ state.entries[i][t.dataset.g].printSkip = true; renderEntries(); return; }
+    if(act==='skipprint'){ var sg = state.entries[i][t.dataset.g]; sg.printSkip = printCase(sg); renderEntries(); return; }
   });
 
   $('#add-entry').addEventListener('click', function(){
@@ -850,7 +875,7 @@
   });
   $('#next-4').addEventListener('click', function(){ setStep(5); });
 
-  function renderFullRecap(){
+  function recapHtml(){
     var lines = [];
     lines.push(['ชื่อผู้สั่งซื้อ', state.name || '—']);
     lines.push(['เบอร์โทร', state.phone || '—']);
@@ -861,28 +886,29 @@
       lines.push(['ผู้รับ', state.sName || '—']);
       lines.push(['ที่อยู่', state.sAddr || '—']);
     }
-    var html = lines.map(function(l){ return '<div class="kv"><span class="k">'+l[0]+'</span><span>'+l[1]+'</span></div>'; }).join('');
+    var html = lines.map(function(l){ return '<div class="kv"><span class="k">'+l[0]+'</span><span>'+esc(l[1])+'</span></div>'; }).join('');
     html += state.entries.map(function(e,i){
-      var who = e.label ? e.label : ('ชุดที่ '+(i+1));
-      var body = '<div class="kv"><span class="k">รุ่น</span><span>'+(e.category||'—')+'</span></div>';
+      var who = esc(e.label ? e.label : ('ชุดที่ '+(i+1)));
+      var body = '<div class="kv"><span class="k">รุ่น</span><span>'+esc(e.category||'—')+'</span></div>';
       GARMENTS.forEach(function(g){
         var gEntry = e[g.key];
         if(!gEntry.checked) return;
         var v = 'ไซส์ '+gEntry.size;
         if(g.print){
-          if(gEntry.printName.trim() || gEntry.printNum!==''){
-            v += ' • '+(gEntry.printName.trim() ? '"'+gEntry.printName+'"' : 'ไม่ระบุชื่อ')+' #'+(gEntry.printNum!=='' ? gEntry.printNum : '-');
-          } else {
-            v += ' • ไม่ระบุชื่อ/เบอร์สกรีน';
-          }
+          var pc = printCase(gEntry);
+          if(pc === 'ok') v += ' • ชื่อ "'+esc(gEntry.printName)+'" เบอร์ '+esc(gEntry.printNum);
+          else if(pc === 'nameOnly') v += ' • ชื่อ "'+esc(gEntry.printName)+'" • ไม่ใส่เบอร์ (ยืนยันแล้ว)';
+          else if(pc === 'numOnly') v += ' • เบอร์ '+esc(gEntry.printNum)+' • ไม่ใส่ชื่อ (ยืนยันแล้ว)';
+          else v += ' • ไม่สกรีนชื่อ/เบอร์ (ยืนยันแล้ว)';
         }
         body += '<div class="kv"><span class="k">'+g.label+'</span><span>'+v+'</span></div>';
       });
       if(!e.shorts.checked && e.shortsSkip){ body += '<div class="kv"><span class="k">กางเกง</span><span>ไม่รับ (ยืนยันแล้ว)</span></div>'; }
       return '<h3>'+who+'</h3>'+body;
     }).join('');
-    $('#full-recap').innerHTML = html;
+    return html;
   }
+  function renderFullRecap(){ $('#full-recap').innerHTML = recapHtml(); }
 
   /* ---------- size modal ---------- */
   var modal = $('#size-modal');
@@ -941,6 +967,7 @@
     btn.disabled = true;
     btn.textContent = 'กำลังส่งคำสั่งซื้อ...';
 
+    var recapForSuccess = recapHtml(); // เก็บสรุปไว้ก่อนส่ง เพื่อโชว์เป็นหลักฐานในหน้าสำเร็จ
     fileToBase64(state.slipFile).then(function(b64){
       return fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -957,7 +984,11 @@
           '<p class="hint">บันทึกลงชีตเรียบร้อย — ทีมงานจะตรวจสอบสลิปและติดต่อกลับหากมีปัญหา</p>'+
           '<p style="margin-top:10px;">เลขที่คำสั่งซื้อ <span class="order-no">'+data.orderId+'</span></p>'+
           '<p style="font-size:1.2rem; font-weight:700; color:var(--maroon); margin-top:4px;">'+total().toLocaleString()+' ฿</p>'+
-        '</div>';
+        '</div>'+
+        '<div class="warn-box" style="margin-top:14px;"><span style="font-size:1.15rem;">📸</span>'+
+          '<span><span class="t">แนะนำให้แคปหน้าจอนี้ไว้เป็นหลักฐาน</span>'+
+          '<div class="p">ด้านล่างคือรายการที่คุณสั่งทั้งหมด (ไซส์ ชื่อ/เบอร์สกรีน) ถ้ามีข้อมูลไม่ตรง แจ้งทีมงานพร้อมเลขที่คำสั่งซื้อก่อนเริ่มผลิต</div></span></div>'+
+        '<div style="margin-top:12px;">'+recapForSuccess+'</div>';
       $('#sticky-lbl').textContent = 'สั่งซื้อสำเร็จ';
     }).catch(function(err){
       btn.disabled = false;

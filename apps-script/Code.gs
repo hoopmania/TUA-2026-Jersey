@@ -20,8 +20,10 @@ var HEADERS = [
   'หมายเหตุ',
   'วิธีจัดส่ง', 'ผู้รับ(จัดส่ง)', 'ที่อยู่จัดส่ง', 'เบอร์โทร(จัดส่ง)',
   'ค่าจัดส่ง (บาท)', 'ยอดรวมออเดอร์ (บาท)', 'ยอดแจ้งการโอน (บาท)', 'ลิงก์สลิปการโอนเงิน',
-  'สถานะ'
+  'สถานะ', 'ลูกค้ายืนยันสกรีน'
 ];
+// 'ลูกค้ายืนยันสกรีน' = บันทึกว่าลูกค้ากดยืนยันเองตอนสั่ง ในกรณีชื่อ/เบอร์สกรีนไม่ครบ (มีชื่อไม่มีเบอร์ /
+// มีเบอร์ไม่มีชื่อ / ไม่สกรีนเลย) — ว่างถ้าครบทั้งชื่อและเบอร์ หรือเป็นออเดอร์ก่อนเพิ่มระบบนี้
 // 'ค่าจัดส่ง' และยอดรวมของบรรทัดแรกในแต่ละ OrderID เท่านั้นที่รวมค่าส่ง —
 // บรรทัดอื่นของ OrderID เดียวกันจะโชว์แค่ยอดของรายการนั้นเอง กัน sum ทั้งคอลัมน์ผิดจากยอดซ้ำ
 // 'ยอดแจ้งการโอน' = ยอดรวมทั้งออเดอร์ (ทุกคนในออเดอร์นี้ + ค่าส่ง) ใส่ไว้แถวแรกของ OrderID
@@ -176,11 +178,65 @@ function createOrder_(data) {
       en.note || '',
       shipLabel, data.sName || '', data.sAddr || '', data.sPhone ? ("'" + data.sPhone) : '',
       rowShipFee, rowTotal, transferAmount, rowSlipUrl,
-      STATUS_DEFAULT
+      STATUS_DEFAULT, confirmedPrintText_(en)
     ]);
   });
 
+  logRawOrder_(now, orderId, data, slipUrl);
+
   return { ok: true, orderId: orderId };
+}
+
+// ============================================================
+// ชื่อ/เบอร์สกรีนไม่ครบ — แยกกรณี + บันทึกว่าลูกค้ากดยืนยันเอง
+// ============================================================
+var PRINT_CASE_LABEL_GS = { none: 'ไม่สกรีน', nameOnly: 'ชื่อเท่านั้น', numOnly: 'เบอร์เท่านั้น' };
+
+function printCaseGs_(name, num) {
+  var hasName = String(name == null ? '' : name).trim() !== '';
+  var hasNum = String(num == null ? '' : num).trim() !== '';
+  if (hasName && hasNum) return 'ok';
+  if (hasName) return 'nameOnly';
+  if (hasNum) return 'numOnly';
+  return 'none';
+}
+
+// ข้อความลงคอลัมน์ 'ลูกค้ายืนยันสกรีน' ของแถวนี้ เช่น "เสื้อกล้าม=ชื่อเท่านั้น (ลูกค้ากดยืนยัน)"
+function confirmedPrintText_(en) {
+  var parts = [];
+  [['tank', 'เสื้อกล้าม'], ['short', 'เสื้อแขนสั้น']].forEach(function (g) {
+    var x = en[g[0]] || {};
+    if (!x.checked || !x.printSkip) return;
+    var c = printCaseGs_(x.printName, x.printNum);
+    if (c === 'ok') return;
+    parts.push(g[1] + '=' + PRINT_CASE_LABEL_GS[c] + ' (ลูกค้ากดยืนยัน)');
+  });
+  return parts.join('; ');
+}
+
+// เก็บข้อมูลดิบที่ลูกค้าส่งมา (JSON ไม่รวมไฟล์สลิป) ไว้ในแท็บ "OrderLog" ที่ซ่อนไว้ — เป็นหลักฐานต้นฉบับ
+// ไว้อ้างอิงเวลามีข้อพิพาท (ไม่เปลี่ยนตามการแก้ชีต Orders) ถ้าเขียน log พลาดจะไม่ทำให้ออเดอร์ล้ม
+var ORDER_LOG_SHEET = 'OrderLog';
+function logRawOrder_(now, orderId, data, slipUrl) {
+  try {
+    var ss = SpreadsheetApp.openById(SHEET_ID);
+    var log = ss.getSheetByName(ORDER_LOG_SHEET);
+    if (!log) {
+      log = ss.insertSheet(ORDER_LOG_SHEET);
+      log.appendRow(['Timestamp', 'OrderID', 'ชื่อผู้สั่งซื้อ', 'ข้อมูลดิบที่ลูกค้าส่งมา (JSON ไม่รวมไฟล์สลิป)']);
+      log.setFrozenRows(1);
+      log.protect().setWarningOnly(true).setDescription('log ต้นฉบับ — ห้ามแก้');
+      log.hideSheet();
+    }
+    var copy = {};
+    Object.keys(data).forEach(function (k) { if (k !== 'slipBase64') copy[k] = data[k]; });
+    copy.slipUrl = slipUrl;
+    var json = JSON.stringify(copy);
+    if (json.length > 49000) json = json.slice(0, 49000) + '...(ตัด)';
+    log.appendRow([now, orderId, data.name, json]);
+  } catch (err) {
+    // ไม่ทำอะไร — log เป็นของเสริม
+  }
 }
 
 function jsonOut_(obj) {
@@ -411,6 +467,7 @@ function onOpen() {
     .addSeparator()
     .addItem('ดูสถิติการสั่งซื้อ (สรุปแยกรุ่น/ชนิดเสื้อ)', 'showOrderStats')
     .addItem('สร้าง/อัปเดตตารางลาเบลจัดส่ง', 'buildShippingLabels')
+    .addItem('ตรวจรายการสกรีนก่อนผลิต (ชื่อ/เบอร์ไม่ครบ)', 'buildPrintReview')
     .addSeparator()
     .addItem('ซ่อมเบอร์โทรเลข 0 หาย (ครั้งเดียว)', 'repairPhoneLeadingZeros')
     .addItem('ตั้ง/ดูรหัสเข้าหน้าแอดมิน (ครั้งเดียว)', 'setAdminToken')
@@ -840,5 +897,138 @@ function buildShippingLabels() {
   SpreadsheetApp.getUi().alert(
     'สร้าง/อัปเดตแท็บ "' + LABEL_SHEET_NAME + '" แล้ว\n' +
     'พัสดุที่ต้องส่ง ' + labels.length + ' กล่อง จากออเดอร์ทั้งหมด ' + built.totalOrders + ' ออเดอร์ (ที่เหลือเป็นกลุ่มรับเองที่โรงยิม)'
+  );
+}
+
+// ============================================================
+// ตรวจรายการสกรีนก่อนผลิต — รวมเคสชื่อ/เบอร์ไม่ครบ ไว้ให้โทรคอนเฟิร์มกับลูกค้า
+// ============================================================
+//
+// สร้างแท็บ "ตรวจสกรีนก่อนผลิต" 1 แถวต่อ 1 ชิ้น (เสื้อกล้าม/เสื้อแขนสั้น) ที่ชื่อหรือเบอร์ไม่ครบ:
+//   - มีชื่อ แต่ไม่ระบุเบอร์ / มีเบอร์ แต่ไม่ระบุชื่อ / ไม่ระบุทั้งสองอย่าง (ไม่สกรีน)
+// คำนวณจากข้อมูลในแท็บ Orders ตอนกดเมนู (ออเดอร์ใหม่เข้ามาแล้วกดซ้ำเพื่ออัปเดต) คอลัมน์ที่แอดมินกรอกเอง
+// (ยืนยันกับลูกค้าแล้ว / สรุปที่ต้องสกรีนจริง / หมายเหตุ) ถูกจำไว้ตามรหัสแถว ไม่หายเมื่ออัปเดต
+var PRINT_REVIEW_SHEET = 'ตรวจสกรีนก่อนผลิต';
+var PRINT_REVIEW_MANUAL = ['ยืนยันกับลูกค้าแล้ว', 'สรุปที่ต้องสกรีนจริง', 'หมายเหตุ'];
+var PRINT_REVIEW_KEYCOL = 'รหัสแถว (ห้ามแก้)';
+var PRINT_FLAG_TEXT = {
+  none: 'ไม่ระบุทั้งชื่อและเบอร์ (ไม่สกรีน)',
+  nameOnly: 'มีชื่อ แต่ไม่ระบุเบอร์',
+  numOnly: 'มีเบอร์ แต่ไม่ระบุชื่อ'
+};
+
+function displayPhone_(v) {
+  var s = String(v == null ? '' : v).trim();
+  return /^[0-9]{9}$/.test(s) ? '0' + s : s; // แสดงผลเท่านั้น ไม่แก้ข้อมูลต้นทาง
+}
+
+// ส่วนคำนวณล้วน ๆ (ไม่แตะ Sheets) — ทดสอบแยกด้วย Node ได้
+function buildPrintReviewRows_(h, rows) {
+  function ix(name) {
+    var i = h.indexOf(name);
+    if (i === -1) throw new Error('ไม่พบคอลัมน์ "' + name + '"');
+    return i;
+  }
+  var c = {
+    oid: ix('OrderID'), buyer: ix('ชื่อผู้สั่งซื้อ'), phone: ix('เบอร์โทร'), line: ix('LINE ID'),
+    label: ix('สำหรับ'), cat: ix('รุ่นนักกีฬาที่ลงแข่ง'),
+    tankOn: ix('สั่งเสื้อกล้าม'), tankSize: ix('ไซส์เสื้อกล้าม'), tankName: ix('ชื่อสกรีนเสื้อกล้าม'), tankNum: ix('เบอร์เสื้อกล้าม'),
+    shortOn: ix('สั่งเสื้อแขนสั้น'), shortSize: ix('ไซส์เสื้อแขนสั้น'), shortName: ix('ชื่อสกรีนเสื้อแขนสั้น'), shortNum: ix('เบอร์เสื้อแขนสั้น'),
+    confirm: h.indexOf('ลูกค้ายืนยันสกรีน') // ออเดอร์เก่า/ชีตที่ยังไม่ migrate อาจยังไม่มีคอลัมน์นี้
+  };
+  var seen = {}, out = [];
+  rows.forEach(function (row) {
+    var oid = row[c.oid];
+    if (!oid) return;
+    var n = seen[oid] === undefined ? 0 : seen[oid] + 1;
+    seen[oid] = n;
+    var confirmText = c.confirm === -1 ? '' : String(row[c.confirm] || '');
+    [
+      ['เสื้อกล้าม', c.tankOn, c.tankSize, c.tankName, c.tankNum],
+      ['เสื้อแขนสั้น', c.shortOn, c.shortSize, c.shortName, c.shortNum]
+    ].forEach(function (g) {
+      if (row[g[1]] !== 'ใช่') return;
+      var pc = printCaseGs_(row[g[3]], row[g[4]]);
+      if (pc === 'ok') return;
+      var confirmed = confirmText.indexOf(g[0] + '=' + PRINT_CASE_LABEL_GS[pc]) !== -1;
+      out.push({
+        key: oid + '|' + n + '|' + g[0],
+        orderId: oid,
+        buyer: String(row[c.buyer] || '').trim(),
+        phone: displayPhone_(row[c.phone]),
+        line: String(row[c.line] || '').trim(),
+        label: String(row[c.label] || '').trim(),
+        category: String(row[c.cat] || '').trim(),
+        garment: g[0],
+        size: String(row[g[2]] || ''),
+        printName: String(row[g[3]] || '').trim(),
+        printNum: String(row[g[4]] == null ? '' : row[g[4]]).trim(),
+        caseKey: pc,
+        flag: PRINT_FLAG_TEXT[pc],
+        confirmNote: confirmed ? 'ลูกค้ากดยืนยันตอนสั่งแล้ว' : 'ไม่มีบันทึกการยืนยัน (ออเดอร์ก่อนเพิ่มระบบบันทึก)'
+      });
+    });
+  });
+  return out;
+}
+
+function buildPrintReview() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var data = readSheetRows_(getSheet_()); // เรียก getSheet_ เพื่อให้คอลัมน์ 'ลูกค้ายืนยันสกรีน' ถูกเพิ่มก่อน
+  if (!data.rows.length) { SpreadsheetApp.getUi().alert('ยังไม่มีออเดอร์ในชีต Orders'); return; }
+  var items = buildPrintReviewRows_(data.headerVals, data.rows);
+
+  var BASE = ['OrderID', 'ผู้สั่งซื้อ', 'เบอร์โทร', 'LINE ID', 'สำหรับ', 'รุ่น', 'ชิ้นที่ตรวจ', 'ไซส์',
+    'ชื่อสกรีน', 'เบอร์สกรีน', 'สิ่งที่ตรวจพบ', 'การยืนยันตอนสั่ง'];
+  var HEAD = BASE.concat(PRINT_REVIEW_MANUAL).concat([PRINT_REVIEW_KEYCOL]);
+  var manualStart = BASE.length + 1; // คอลัมน์ (1-based) ของ 'ยืนยันกับลูกค้าแล้ว'
+
+  var sheet = ss.getSheetByName(PRINT_REVIEW_SHEET);
+  var keep = {};
+  if (sheet && sheet.getLastRow() >= 2) {
+    var old = sheet.getDataRange().getValues();
+    var oh = old[0];
+    var oKey = oh.indexOf(PRINT_REVIEW_KEYCOL);
+    var oMan = PRINT_REVIEW_MANUAL.map(function (n) { return oh.indexOf(n); });
+    if (oKey !== -1) {
+      old.slice(1).forEach(function (r) {
+        keep[r[oKey]] = oMan.map(function (i) { return i === -1 ? '' : r[i]; });
+      });
+    }
+  }
+  if (!sheet) sheet = ss.insertSheet(PRINT_REVIEW_SHEET);
+  var oldFilter = sheet.getFilter();
+  if (oldFilter) oldFilter.remove();
+  sheet.clear();
+  sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).clearDataValidations();
+
+  sheet.getRange(1, 1, 1, HEAD.length).setValues([HEAD])
+    .setFontWeight('bold').setBackground('#8A1F2B').setFontColor('#FFFFFF').setVerticalAlignment('middle');
+  sheet.setFrozenRows(1);
+
+  var counts = { none: 0, nameOnly: 0, numOnly: 0 }, unchecked = 0;
+  if (items.length) {
+    var body = items.map(function (it) {
+      var m = keep[it.key] || [false, '', ''];
+      counts[it.caseKey]++;
+      if (m[0] !== true) unchecked++;
+      return [it.orderId, it.buyer, it.phone, it.line, it.label, it.category, it.garment, it.size,
+        it.printName, it.printNum, it.flag, it.confirmNote, m[0] === true, m[1], m[2], it.key];
+    });
+    sheet.getRange(2, 3, body.length, 1).setNumberFormat('@');   // เบอร์โทร
+    sheet.getRange(2, 10, body.length, 1).setNumberFormat('@');  // เบอร์สกรีน
+    sheet.getRange(2, 1, body.length, HEAD.length).setValues(body);
+    sheet.getRange(2, manualStart, body.length, 1).insertCheckboxes();
+    sheet.getRange(2, 1, body.length, HEAD.length).setVerticalAlignment('top').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+    sheet.getRange(1, 1, body.length + 1, HEAD.length).createFilter();
+  }
+  [130, 150, 100, 110, 110, 90, 90, 55, 110, 70, 190, 200, 80, 200, 160, 120].forEach(function (w, i) { sheet.setColumnWidth(i + 1, w); });
+
+  SpreadsheetApp.getUi().alert(
+    'สร้าง/อัปเดตแท็บ "' + PRINT_REVIEW_SHEET + '" แล้ว — พบ ' + items.length + ' ชิ้นที่ชื่อ/เบอร์ไม่ครบ\n' +
+    '• มีชื่อ ไม่มีเบอร์: ' + counts.nameOnly + '\n' +
+    '• มีเบอร์ ไม่มีชื่อ: ' + counts.numOnly + '\n' +
+    '• ไม่ระบุทั้งสองอย่าง (ไม่สกรีน): ' + counts.none + '\n' +
+    'ยังไม่ติ๊กว่ายืนยันกับลูกค้าแล้ว: ' + unchecked + ' ชิ้น'
   );
 }

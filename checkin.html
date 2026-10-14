@@ -203,6 +203,8 @@
         if(num || pn){
           if(num) h += '<span class="pnum">#' + esc(num) + '</span>';
           if(pn) h += '<span class="pname">' + esc(pn) + '</span>';
+          if(!num) h += '<span class="noprint">ไม่ระบุเบอร์</span>';
+          if(!pn) h += '<span class="noprint">ไม่ระบุชื่อ</span>';
         } else {
           h += '<span class="noprint">ไม่สกรีน</span>';
         }
