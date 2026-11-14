@@ -56,6 +56,9 @@
   .hide-row{display:flex; align-items:center; gap:8px; font-size:.9rem; font-weight:600; margin:2px 0 12px; cursor:pointer;}
   .hide-row input{width:20px; height:20px; accent-color:var(--maroon); flex:none;}
   .hidden-note{font-size:.78rem; color:var(--muted); margin:-4px 0 10px;}
+  .btn-ghost{background:transparent; color:var(--maroon); border:1.5px solid var(--line);}
+  .listtools{margin:0 0 10px;}
+  .listtools .btn{padding:8px 14px; font-size:.86rem;}
 
   .row{display:flex; gap:10px; align-items:flex-start; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px;}
   .row.disabled{opacity:.55;}
@@ -110,7 +113,9 @@
     <option>กองเชียร์หรืออื่นๆ</option>
   </select>
   <label class="hide-row"><input type="checkbox" id="hide-delivery"> ซ่อนกลุ่มที่เลือกจัดส่งที่บ้าน</label>
+  <label class="hide-row"><input type="checkbox" id="hide-done"> ซ่อนคนที่รับชุดแล้ว</label>
   <div class="hidden-note" id="hidden-note" style="display:none;"></div>
+  <div class="listtools" id="listtools" style="display:none;"><button class="btn btn-ghost" id="btn-all" type="button"></button></div>
 
   <p class="msg" id="msg" style="display:none;"></p>
   <div id="results"></div>
@@ -128,6 +133,7 @@
   var RECEIVED = 'รับชุดแล้ว';
   var CATS = ['ชาย 27+','ชาย 40+','ชาย 50+','ชาย 57+','หญิง 27+','หญิง 35+','หญิง 45+','กองเชียร์หรืออื่นๆ'];
   var HIDE_KEY = 'checkin_hide_delivery';
+  var DONE_KEY = 'checkin_hide_done';
 
   var token = new URLSearchParams(location.search).get('token');
   if(!token){
@@ -181,12 +187,13 @@
     }
 
     // ---------- รายการ ----------
-    function filterRows(hideDelivery){
+    function filterRows(hideDelivery, hideDone){
       var q = $('#q').value.trim().toLowerCase();
       var cat = $('#category').value;
       return allRows.filter(function(r){
         if(cat && (r.category || '') !== cat) return false;
         if(hideDelivery && !isPickup(r)) return false;
+        if(hideDone && isReceived(r)) return false;
         if(q){
           var hay = (String(r.name||'') + ' ' + String(r.phone||'') + ' ' + String(r.label||'')).toLowerCase();
           if(hay.indexOf(q) === -1) return false;
@@ -224,8 +231,8 @@
     }
 
     function renderList(){
-      var hide = $('#hide-delivery').checked;
-      var shown = filterRows(hide);
+      var hide = $('#hide-delivery').checked, hideDone = $('#hide-done').checked;
+      var shown = filterRows(hide, hideDone);
 
       // เก็บเฉพาะที่ยังมองเห็นอยู่ — กันกดยืนยันโดยที่ลืมว่าเลือกแถวที่ถูกซ่อน/กรองออกไปแล้ว
       var visible = {};
@@ -234,12 +241,24 @@
       updateBar();
 
       var note = $('#hidden-note');
-      if(hide){
-        var hiddenN = filterRows(false).length - shown.length;
-        note.textContent = hiddenN > 0 ? 'ซ่อนรายการจัดส่งที่บ้านอยู่ ' + hiddenN + ' รายการ' : '';
-        note.style.display = hiddenN > 0 ? 'block' : 'none';
+      var base = filterRows(false, false);
+      var hidDel = hide ? base.filter(function(r){ return !isPickup(r); }).length : 0;
+      var hidDone = hideDone ? base.filter(function(r){ return isPickup(r) && isReceived(r); }).length : 0;
+      var parts = [];
+      if(hidDel) parts.push('จัดส่งที่บ้าน ' + hidDel + ' รายการ');
+      if(hidDone) parts.push('รับชุดแล้ว ' + hidDone + ' รายการ');
+      note.textContent = parts.length ? 'ซ่อนอยู่: ' + parts.join(' • ') : '';
+      note.style.display = parts.length ? 'block' : 'none';
+
+      // ปุ่มเลือกทั้งหมด — ใช้ตอนคนเดียวสั่งหลายแถว (หลายคน/หลายชิ้น) จะได้ติ๊กทีเดียว
+      var pickable = shown.filter(function(r){ return isPickup(r) && !isReceived(r); });
+      var tools = $('#listtools');
+      if(pickable.length > 1){
+        var allSel = pickable.every(function(r){ return selected[String(r.row)]; });
+        $('#btn-all').textContent = allSel ? 'ยกเลิกการเลือกทั้งหมด' : 'เลือกทั้งหมดที่รับได้ (' + pickable.length + ' รายการ)';
+        tools.style.display = 'block';
       } else {
-        note.style.display = 'none';
+        tools.style.display = 'none';
       }
 
       var el = $('#results');
@@ -295,12 +314,26 @@
 
     // ---------- events ----------
     try { $('#hide-delivery').checked = localStorage.getItem(HIDE_KEY) === '1'; } catch(e){}
+    try { $('#hide-done').checked = localStorage.getItem(DONE_KEY) === '1'; } catch(e){}
+    // ลิงก์วันงาน: ต่อท้าย &only=pickup เพื่อซ่อนกลุ่มจัดส่งที่บ้านให้อัตโนมัติ (ไม่ต้องให้ทุกเครื่องมาติ๊กเอง)
+    if(new URLSearchParams(location.search).get('only') === 'pickup'){ $('#hide-delivery').checked = true; }
 
     $('#btn-refresh').addEventListener('click', function(){ fetchAll(); });
     $('#q').addEventListener('input', renderList);
     $('#category').addEventListener('change', renderList);
     $('#hide-delivery').addEventListener('change', function(){
       try { localStorage.setItem(HIDE_KEY, this.checked ? '1' : '0'); } catch(e){}
+      renderList();
+    });
+
+    $('#hide-done').addEventListener('change', function(){
+      try { localStorage.setItem(DONE_KEY, this.checked ? '1' : '0'); } catch(e){}
+      renderList();
+    });
+    $('#btn-all').addEventListener('click', function(){
+      var pick = filterRows($('#hide-delivery').checked, $('#hide-done').checked).filter(function(r){ return isPickup(r) && !isReceived(r); });
+      var allSel = pick.length > 0 && pick.every(function(r){ return selected[String(r.row)]; });
+      pick.forEach(function(r){ if(allSel) delete selected[String(r.row)]; else selected[String(r.row)] = true; });
       renderList();
     });
 
